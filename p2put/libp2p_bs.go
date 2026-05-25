@@ -181,11 +181,12 @@ func mainLibp2p(cfg Config) {
 	}
 	fmt.Println()
 
-	if cfg.Fset.Parsed() {
+	if cfg.fset.Parsed() {
 		log.Println(cfg.KeyFile)
 		log.Println(cfg.ListenPort)
 	}
 	currConfig = cfg
+	currConfig.fset = nil
 
 	res, err := Libp2pBootstrap(context.Background(), currConfig)
 	if err != nil {
@@ -202,7 +203,7 @@ func mainLibp2p(cfg Config) {
 		defer ticker.Stop()
 		for range ticker.C {
 			if err := savePeerstore(peerstorePath); err != nil {
-				log.Printf("[peerstore] save error: %v", err)
+				log.Printf("[peerstore] save error: %v\n", err)
 			}
 			cleanPeerstore()
 		}
@@ -210,7 +211,12 @@ func mainLibp2p(cfg Config) {
 
 	go myDiscoveryV3()
 	//go myDiscoveryV2()
-
+	mode := "Server"
+	if currConfig.IsMobile {
+		mode = "Light"
+	}
+	log.Printf("%#v\n", currConfig)
+	log.Printf("Run node in *%v* mode\n", mode)
 	select {}
 }
 
@@ -262,6 +268,21 @@ func Libp2pBootstrap(ctx context.Context, cfg Config) (*Libp2pBootResult, error)
 
 	fmt.Println("=== Phase 1.5: Creating Host with Relay/AutoRelay/HolePunching ===")
 
+	// static relay seems fixed relay, not auto find more relays
+	autoRelayOpt := libp2p.EnableAutoRelayWithStaticRelays(
+		staticRelays,
+		autorelay.WithNumRelays(5),
+		autorelay.WithMinCandidates(5),
+		autorelay.WithBootDelay(60*time.Second),
+	)
+	if currConfig.IsMobile {
+		autoRelayOpt = libp2p.EnableAutoRelayWithStaticRelays(
+			dht.GetDefaultBootstrapPeerAddrInfos(),
+			autorelay.WithNumRelays(2),
+			autorelay.WithMinCandidates(3),
+			autorelay.WithBootDelay(30*time.Second),
+		)
+	}
 	bwc := metrics.NewBandwidthCounter()
 
 	h, err := libp2p.New(
@@ -270,54 +291,16 @@ func Libp2pBootstrap(ctx context.Context, cfg Config) (*Libp2pBootResult, error)
 		libp2p.ResourceManager(myResourceManager()),
 
 		libp2p.EnableRelay(),
-
-		libp2p.EnableAutoRelayWithStaticRelays(
-			dht.GetDefaultBootstrapPeerAddrInfos(),
-			autorelay.WithNumRelays(2),
-			autorelay.WithMinCandidates(3),
-			autorelay.WithBootDelay(30*time.Second),
-		),
-
-		// static relay seems fixed relay, not auto find more relays
-		/*libp2p.EnableAutoRelayWithStaticRelays(
-			staticRelays,
-			autorelay.WithNumRelays(5),
-			autorelay.WithMinCandidates(5),
-			autorelay.WithBootDelay(60*time.Second),
-		),
-		*/
-
+		autoRelayOpt,
 		libp2p.EnableHolePunching(),
+
 		libp2p.Transport(tcp.NewTCPTransport),
 		libp2p.Transport(websocket.New),
 		libp2p.UserAgent("universal-connectivity/go-peer"),
 
 		libp2p.BandwidthReporter(bwc),
 
-		libp2p.AddrsFactory(func(addrs []multiaddr.Multiaddr) []multiaddr.Multiaddr {
-			var out []multiaddr.Multiaddr
-			for _, a := range addrs {
-				if isRelayAddr(a) {
-					out = append(out, a)
-				} else {
-					ip4 := false
-					tcp := false
-					ip := extractIPFromAddr(a)
-					islo := ip!=nil && ip.IsLoopback()
-					for _, p := range a.Protocols() {
-						if p.Code == multiaddr.P_IP4 { ip4 = true }
-						if p.Code == multiaddr.P_TCP { tcp = true }
-					}
-					if ip4 && tcp && !islo {
-						out = append(out, a)
-					}
-				}
-			}
-			if len(addrs) != len(out) {
-				// log.Println("addrs filter", len(addrs), "=>", len(out))
-			}
-			return out
-		}),
+		libp2p.AddrsFactory(myAddrsFactory),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("create libp2p host: %w", err)
@@ -426,8 +409,9 @@ func myDiscoveryV3() {
 	rd := bootres.Discovery
 	dht := bootres.DHT
 	tag := currConfig.HubName
-	sec100 := 100*time.Second
+	sec100 := 120*time.Second
 	known := make(map[string]peer.AddrInfo)
+
 	for i := 0 ;; i++{
 		time.Sleep(3*time.Second)
 		log.Println("start DHT finding...", i)
@@ -458,17 +442,20 @@ func myDiscoveryV3() {
 				err = tryConnect(p)
 				p2 = p
 				if err == nil { break }
-				if true { break }
+				if currConfig.IsMobile { break }
 
+				// udp heavy
 				time.Sleep(time.Second)
 				t1 := time.Now()
 				log.Println("(UDP) dht.FindPeer'ing ...", p2.ID.ShortString())
 				// findAndConnect(p2.ID.String(), rd, 1)
 				addrinfo, err := dht.FindPeer(context.Background(), p2.ID)
 				_ = addrinfo
+				log.Println("(UDP) dht.FindPeer'ed ...", time.Since(t1), p2.ID.ShortString(), addrinfo, err)
 				if err != nil {
+				}else{
+					tryConnect(addrinfo)
 				}
-				log.Println("(UDP) dht.FindPeer'ed ...", time.Since(t1), p2.ID.ShortString(), addrinfo)
 				break
 			}
 			time.Sleep(13*time.Second)

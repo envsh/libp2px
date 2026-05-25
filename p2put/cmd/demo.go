@@ -2,7 +2,7 @@ package main
 
 import (
 	// "flag"
-	"os"
+	// "os"
 	"log"
 	"net/http"
 
@@ -11,11 +11,11 @@ import (
 )
 
 func main() {
-	cfg := p2put.DefaultConfig()
+	cfg := p2put.ParseConfig()
 	cfg.Dht = false
 	_ = cfg
 
-	cfg.Fset.Parse(os.Args[1:])
+	// cfg.Fset.Parse(os.Args[1:])
 	// cfg.KeyFile = *keyFile
 	// cfg.ListenPort = *port
 

@@ -153,3 +153,28 @@ func supportsRelayHop(ctx context.Context, h host.Host, p peer.ID) bool {
 	s.Close()
 	return true
 }
+
+func myAddrsFactory(addrs []multiaddr.Multiaddr) []multiaddr.Multiaddr {
+	var out []multiaddr.Multiaddr
+	for _, a := range addrs {
+		if isRelayAddr(a) {
+			out = append(out, a)
+		} else {
+			ip4 := false
+			tcp := false
+			ip := extractIPFromAddr(a)
+			islo := ip!=nil && ip.IsLoopback()
+			for _, p := range a.Protocols() {
+				if p.Code == multiaddr.P_IP4 { ip4 = true }
+				if p.Code == multiaddr.P_TCP { tcp = true }
+			}
+			if ip4 && tcp && !islo {
+				out = append(out, a)
+			}
+		}
+	}
+	if len(addrs) != len(out) {
+		// log.Println("addrs filter", len(addrs), "=>", len(out))
+	}
+	return out
+}

@@ -11,20 +11,17 @@ import (
 )
 
 func getFlagSet(cfg *Config) *flag.FlagSet {
-	fs := flag.NewFlagSet("libp2p", flag.ContinueOnError)
-	keyFile := fs.String("k", "key.txt", "keyring file")
-	port := fs.Int("l", 0, "TCP listen port - 4001 or random")
-	_ , _  = keyFile, port
-	cfg._KeyFile = keyFile
-	cfg._ListenPort = port
+	fs := flag.NewFlagSet("libp2p-node", flag.ContinueOnError)
+	fs.StringVar(&cfg.KeyFile, "k", "key.txt", "keyring file")
+	fs.IntVar(&cfg.ListenPort, "l", 0, "TCP listen port - 4001 or random")
+	fs.BoolVar(&cfg.IsMobile, "m", cfg.IsMobile, "Run mobile mode, less bandwidth")
+
 	return fs
 }
 
 type Config struct {
 	// usage1, just Fset.parse()
 	Fset *flag.FlagSet // caller parser
-	_KeyFile *string
-	_ListenPort *int
 
 	// usage2, assign direct, without Fset.parse
 	KeyFile    string // fedkey seed file
@@ -33,7 +30,6 @@ type Config struct {
 	IsMobile  bool // bandwidth and battary
 	UserAgent string // "universal-connectivity/go-peer"
 
-	Server bool
 	Dht   bool
 	ResRate float32 // 0.5, 1, 2
 	Relay bool
@@ -49,6 +45,7 @@ type Config struct {
 
 var currConfig = DefaultConfig()
 
+// default for vps deploy that not cmdline
 func DefaultConfig() Config {
 	var dftConfig = Config{
 		KeyFile: "key.txt",

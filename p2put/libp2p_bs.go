@@ -104,20 +104,6 @@ func init() {
 	}
 }
 
-type Libp2pSeedResult struct {
-	Addr    multiaddr.Multiaddr
-	PeerID  peer.ID
-	Success bool
-	Err     string
-}
-
-type Libp2pBsPeerInfo struct {
-	Addr          string
-	PeerID        peer.ID
-	Conn          network.Conn
-	SupportsRelay bool
-}
-
 type Libp2pBootResult struct {
 	Host          host.Host
 	DHT           *dht.IpfsDHT
@@ -195,21 +181,9 @@ func mainLibp2p(cfg Config) {
 	}
 	fmt.Println()
 
-	// fs := flag.NewFlagSet("libp2p", flag.ContinueOnError)
-	// keyFile := fs.String("k", "key.txt", "keyring file")
-	// port := fs.Int("l", 0, "TCP listen port - 4001 or random")
-	// fs.Parse(os.Args[1:])
-
-	// cfg := Libp2pBootConfig{
-	// 	KeyFile:    *keyFile,
-	// 	ListenPort: *port,
-	// }
-
 	if cfg.Fset.Parsed() {
-		log.Println(*cfg._KeyFile)
-		log.Println(*cfg._ListenPort)
-		cfg.KeyFile = *cfg._KeyFile
-		cfg.ListenPort = *cfg._ListenPort
+		log.Println(cfg.KeyFile)
+		log.Println(cfg.ListenPort)
 	}
 	currConfig = cfg
 
@@ -296,14 +270,6 @@ func Libp2pBootstrap(ctx context.Context, cfg Config) (*Libp2pBootResult, error)
 		libp2p.ResourceManager(myResourceManager()),
 
 		libp2p.EnableRelay(),
-
-		/*
-		libp2p.EnableAutoRelay(
-			autorelay.WithNumRelays(3),
-			autorelay.WithMinCandidates(3),
-			autorelay.WithBootDelay(30*time.Second),
-		),
-		*/
 
 		libp2p.EnableAutoRelayWithStaticRelays(
 			dht.GetDefaultBootstrapPeerAddrInfos(),
@@ -492,6 +458,7 @@ func myDiscoveryV3() {
 				err = tryConnect(p)
 				p2 = p
 				if err == nil { break }
+				if true { break }
 
 				time.Sleep(time.Second)
 				t1 := time.Now()

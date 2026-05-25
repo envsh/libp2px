@@ -336,17 +336,19 @@ func Libp2pBootstrap(ctx context.Context, cfg Config) (*Libp2pBootResult, error)
 				} else {
 					ip4 := false
 					tcp := false
+					ip := extractIPFromAddr(a)
+					islo := ip!=nil && ip.IsLoopback()
 					for _, p := range a.Protocols() {
 						if p.Code == multiaddr.P_IP4 { ip4 = true }
 						if p.Code == multiaddr.P_TCP { tcp = true }
 					}
-					if ip4 && tcp {
+					if ip4 && tcp && !islo {
 						out = append(out, a)
 					}
 				}
 			}
 			if len(addrs) != len(out) {
-				log.Println("addrs filter", len(addrs), "=>", len(out))
+				// log.Println("addrs filter", len(addrs), "=>", len(out))
 			}
 			return out
 		}),
@@ -413,6 +415,7 @@ func Libp2pBootstrap(ctx context.Context, cfg Config) (*Libp2pBootResult, error)
 		new(event.EvtLocalAddressesUpdated))
 	pso, err := pubsub.NewGossipSub(context.Background(), h,
 		pubsub.WithPeerExchange(true),
+		pubsub.WithFloodPublish(true), // can publish to peer, not wait to mesh
 		// half default
 		pubsub.WithGossipSubParams(myGossipSubParams()),
 		pubsub.WithPeerScore(
@@ -491,11 +494,14 @@ func myDiscoveryV3() {
 				if err == nil { break }
 
 				time.Sleep(time.Second)
+				t1 := time.Now()
+				log.Println("(UDP) dht.FindPeer'ing ...", p2.ID.ShortString())
 				// findAndConnect(p2.ID.String(), rd, 1)
 				addrinfo, err := dht.FindPeer(context.Background(), p2.ID)
 				_ = addrinfo
 				if err != nil {
 				}
+				log.Println("(UDP) dht.FindPeer'ed ...", time.Since(t1), p2.ID.ShortString(), addrinfo)
 				break
 			}
 			time.Sleep(13*time.Second)

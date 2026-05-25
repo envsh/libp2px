@@ -178,10 +178,10 @@ type BoardResp struct {
 	PeerID    string         `json:"peer_id"`
 	Pubkey    string         `json:"pubkey"`
 	NATStatus string         `json:"nat_status"`
+	MyAddrs   []AddrResp          `json:"my_addrs"`
 	Relays0   int            `json:"relays0"`
 	Relays1   int            `json:"relays1"`
 	Conns     int            `json:"connections"`
-	Addrs     int            `json:"listening_addrs"`
 	Bandwidth *BandwidthResp `json:"bandwidth"`
 	Resources *ResourcesResp `json:"resources,omitempty"`
 }
@@ -208,8 +208,8 @@ type BandwidthResp struct {
 }
 
 type RelayResp struct {
-	Candidates []string `json:"candidates"`
 	Connected  []string `json:"connected"`
+	Candidates []string `json:"candidates"`
 }
 
 type AddrResp struct {
@@ -534,10 +534,10 @@ func CollectBoard() (BoardResp, error) {
 		PeerID:    h.ID().String(),
 		Pubkey:    bootres.PubkeyHex,
 		NATStatus: bootres.NATStatus.String(),
+		MyAddrs:    addrs,
 		Relays0:    len(relays.Candidates),
 		Relays1:    len(relays.Connected),
 		Conns:     len(conns),
-		Addrs:     len(addrs),
 		Bandwidth: bw,
 		Resources: res,
 	}, nil

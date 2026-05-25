@@ -211,6 +211,11 @@ func mainLibp2p(cfg Config) {
 
 	go myDiscoveryV3()
 	//go myDiscoveryV2()
+	for _, topic := range currConfig.Topics {
+		if len(topic) <= 0 { continue }
+		getOrSubscribeTopic(topic)
+	}
+
 	mode := "Server"
 	if currConfig.IsMobile {
 		mode = "Light"

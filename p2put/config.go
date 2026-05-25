@@ -42,6 +42,8 @@ type Config struct {
 	Bw   bool
 	Punching bool
 	AutoPing bool
+
+	Topics []string
 }
 
 // default for vps deploy that not cmdline

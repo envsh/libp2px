@@ -19,7 +19,7 @@ import (
 	"github.com/multiformats/go-multiaddr"
 )
 
-var bootres *Libp2pBootResult
+var bootres *BootNode
 
 //////////////
 

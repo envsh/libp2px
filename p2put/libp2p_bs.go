@@ -104,7 +104,7 @@ func init() {
 	}
 }
 
-type Libp2pBootResult struct {
+type BootNode struct {
 	Host          host.Host
 	DHT           *dht.IpfsDHT
 	PSO           *pubsub.PubSub
@@ -188,7 +188,7 @@ func mainLibp2p(cfg Config) {
 	currConfig = cfg
 	currConfig.fset = nil
 
-	res, err := Libp2pBootstrap(context.Background(), currConfig)
+	res, err := Bootstrap(context.Background(), currConfig)
 	if err != nil {
 		panic(err)
 	}
@@ -209,7 +209,7 @@ func mainLibp2p(cfg Config) {
 		}
 	}()
 
-	go myDiscoveryV3()
+	go res.myDiscoveryV3()
 	//go myDiscoveryV2()
 	for _, topic := range currConfig.Topics {
 		if len(topic) <= 0 { continue }
@@ -246,7 +246,7 @@ func filterConvertBootstrapInfos() []peer.AddrInfo {
 	return bootstrapInfos
 }
 
-func Libp2pBootstrap(ctx context.Context, cfg Config) (*Libp2pBootResult, error) {
+func Bootstrap(ctx context.Context, cfg Config) (*BootNode, error) {
 	start := time.Now()
 
 	fmt.Println("=== Phase 1: Key Loading ===")
@@ -344,7 +344,7 @@ func Libp2pBootstrap(ctx context.Context, cfg Config) (*Libp2pBootResult, error)
 	}
 
 	// dht
-	bsres := &Libp2pBootResult{
+	bsres := &BootNode {
 		Host:      h,
 		// DHT:       kadDHT,
 		// PSO:       pso,
@@ -355,7 +355,7 @@ func Libp2pBootstrap(ctx context.Context, cfg Config) (*Libp2pBootResult, error)
 		// Discovery: routingDiscovery,
 	}
 	if true {
-		myBootstrapUDP(bsres, ctx, bootstrapInfos)
+		bsres.bootDHT(ctx, bootstrapInfos)
 	}
 
 	fmt.Println("=== Phase 4: Go Online ===")
@@ -398,19 +398,9 @@ func Libp2pBootstrap(ctx context.Context, cfg Config) (*Libp2pBootResult, error)
 	log.Println("bootstrap ret...")
 	bsres.PSO = pso
 	return bsres, nil
-	// return &Libp2pBootResult{
-	// 	Host:      h,
-	// 	DHT:       kadDHT,
-	// 	PSO:       pso,
-	// 	Bwc:       bwc,
-	// 	PeerID:    myID,
-	// 	PubkeyHex: pubHex,
-	// 	BootTime:  time.Since(start),
-	// 	Discovery: routingDiscovery,
-	// }, nil
 }
 
-func myBootstrapUDP(bsres *Libp2pBootResult, ctx context.Context, bootstrapInfos []peer.AddrInfo) (any, error) {
+func (bsres *BootNode) bootDHT(ctx context.Context, bootstrapInfos []peer.AddrInfo) (any, error) {
 	h := bsres.Host
 
 	fmt.Println("=== Phase 3: DHT Bootstrap ===")
@@ -450,7 +440,7 @@ func myBootstrapUDP(bsres *Libp2pBootResult, ctx context.Context, bootstrapInfos
 
 
 // only find HubName
-func myDiscoveryV3() {
+func (bootres *BootNode) myDiscoveryV3() {
 	rd := bootres.Discovery
 	dht := bootres.DHT
 	tag := currConfig.HubName

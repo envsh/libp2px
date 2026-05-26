@@ -331,6 +331,88 @@ func Libp2pBootstrap(ctx context.Context, cfg Config) (*Libp2pBootResult, error)
 		return nil, fmt.Errorf("no valid bootstrap nodes")
 	}
 
+	//
+	for i, v := range extraStaticRelays {
+		log.Println(i, v)
+		btime := time.Now()
+		addr, err := peer.AddrInfoFromString(v)
+		if err != nil {}
+		err = h.Connect(ctx, *addr)
+		if err != nil {
+			log.Println(err, time.Since(btime))
+		}
+	}
+
+	// dht
+	bsres := &Libp2pBootResult{
+		Host:      h,
+		// DHT:       kadDHT,
+		// PSO:       pso,
+		Bwc:       bwc,
+		PeerID:    myID,
+		PubkeyHex: pubHex,
+		BootTime:  time.Since(start),
+		// Discovery: routingDiscovery,
+	}
+	if true {
+		myBootstrapUDP(bsres, ctx, bootstrapInfos)
+	}
+
+	fmt.Println("=== Phase 4: Go Online ===")
+	fmt.Printf("[*] Node is now online. Press Ctrl+C to exit.\n")
+
+	myEventSuber(h, new(event.EvtLocalReachabilityChanged),
+		new(event.EvtPeerConnectednessChanged),
+		new(event.EvtLocalAddressesUpdated))
+	pso, err := pubsub.NewGossipSub(context.Background(), h,
+		pubsub.WithPeerExchange(true),
+		pubsub.WithFloodPublish(true), // can publish to peer, not wait to mesh
+		pubsub.WithDirectPeers(staticRelays),
+		// pubsub.WithDirectPeers(dht.GetDefaultBootstrapPeerAddrInfos()),
+		// half default
+		pubsub.WithGossipSubParams(myGossipSubParams()),
+		pubsub.WithPeerScore(
+			&pubsub.PeerScoreParams{
+				SkipAtomicValidation: true,
+				AppSpecificScore:     func(peer.ID) float64 { return 0 },
+				DecayInterval:        time.Second,
+				DecayToZero:          0.01,
+			},
+			&pubsub.PeerScoreThresholds{
+				SkipAtomicValidation: true,
+			},
+		),
+		pubsub.WithPeerScoreInspect(
+			func(scores map[peer.ID]float64) {
+				for pid, s := range scores {
+					log.Printf("[score] %s: %.2f", pid.ShortString(), s)
+				}
+			},
+			30*time.Second,
+		),
+	)
+	if err != nil { log.Println(err) }
+
+	fmt.Println("=== Phase 4.5: Waiting for AutoNAT ===")
+
+	log.Println("bootstrap ret...")
+	bsres.PSO = pso
+	return bsres, nil
+	// return &Libp2pBootResult{
+	// 	Host:      h,
+	// 	DHT:       kadDHT,
+	// 	PSO:       pso,
+	// 	Bwc:       bwc,
+	// 	PeerID:    myID,
+	// 	PubkeyHex: pubHex,
+	// 	BootTime:  time.Since(start),
+	// 	Discovery: routingDiscovery,
+	// }, nil
+}
+
+func myBootstrapUDP(bsres *Libp2pBootResult, ctx context.Context, bootstrapInfos []peer.AddrInfo) (any, error) {
+	h := bsres.Host
+
 	fmt.Println("=== Phase 3: DHT Bootstrap ===")
 	fmt.Println("[*] Starting Kademlia DHT in client mode...")
 
@@ -361,53 +443,11 @@ func Libp2pBootstrap(ctx context.Context, cfg Config) (*Libp2pBootResult, error)
 		_ = pingService
 	}
 
-	fmt.Println("=== Phase 4: Go Online ===")
-	fmt.Printf("[*] Node is now online. Press Ctrl+C to exit.\n")
-
-	myEventSuber(h, new(event.EvtLocalReachabilityChanged),
-		new(event.EvtPeerConnectednessChanged),
-		new(event.EvtLocalAddressesUpdated))
-	pso, err := pubsub.NewGossipSub(context.Background(), h,
-		pubsub.WithPeerExchange(true),
-		pubsub.WithFloodPublish(true), // can publish to peer, not wait to mesh
-		// half default
-		pubsub.WithGossipSubParams(myGossipSubParams()),
-		pubsub.WithPeerScore(
-			&pubsub.PeerScoreParams{
-				SkipAtomicValidation: true,
-				AppSpecificScore:     func(peer.ID) float64 { return 0 },
-				DecayInterval:        time.Second,
-				DecayToZero:          0.01,
-			},
-			&pubsub.PeerScoreThresholds{
-				SkipAtomicValidation: true,
-			},
-		),
-		pubsub.WithPeerScoreInspect(
-			func(scores map[peer.ID]float64) {
-				for pid, s := range scores {
-					log.Printf("[score] %s: %.2f", pid.ShortString(), s)
-				}
-			},
-			30*time.Second,
-		),
-	)
-	if err != nil { log.Println(err) }
-
-	fmt.Println("=== Phase 4.5: Waiting for AutoNAT ===")
-
-	log.Println("bootstrap ret...")
-	return &Libp2pBootResult{
-		Host:      h,
-		DHT:       kadDHT,
-		PSO:       pso,
-		Bwc:       bwc,
-		PeerID:    myID,
-		PubkeyHex: pubHex,
-		BootTime:  time.Since(start),
-		Discovery: routingDiscovery,
-	}, nil
+	bsres.DHT = kadDHT
+	bsres.Discovery = routingDiscovery
+	return nil, nil
 }
+
 
 // only find HubName
 func myDiscoveryV3() {
@@ -640,6 +680,7 @@ func myDumpBoot(h host.Host, dht *dht.IpfsDHT) {
 }
 
 func GetCurrConns (h host.Host) (discoveredSet map[peer.ID]struct{}) {
+	discoveredSet = make(map[peer.ID]struct{})
 	for _, conn := range h.Network().Conns() {
 		discoveredSet[conn.RemotePeer()] = struct{}{}
 	}

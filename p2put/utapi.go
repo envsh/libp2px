@@ -36,12 +36,16 @@ var (
 	clientTopics  map[chan Event][]string
 	topicSubs     sync.Map // map[string]*pubsub.Topic
 	discoveryTags sync.Map // set[string]
+
+	eventCallbacks   map[uintptr]func(any)
+	eventCallbacksMu sync.Mutex
 )
 
 func init() {
 	rawChan = make(chan any, 100)
 	clients = make(map[chan Event]struct{})
 	clientTopics = make(map[chan Event][]string)
+	eventCallbacks = make(map[uintptr]func(any))
 	go broadcastLoop()
 	// discoveryTags.Store("libp2p-bootstrap-test", struct{}{})
 	discoveryTags.Store("envsh-d2hub", struct{}{})
@@ -61,16 +65,36 @@ func broadcastLoop() {
 			Type:  reflect.TypeOf(raw).String(),
 			Value: raw,
 		}
-		clientsMu.RLock()
-		for ch := range clients {
-			select {
-			case ch <- evt:
-			default:
-			}
-		}
-		clientsMu.RUnlock()
+		fireClients(evt)
+		fireCallbacks(raw)
 	}
-}//
+}
+
+func fireClients(evt Event) {
+	clientsMu.RLock()
+	defer clientsMu.RUnlock()
+	for ch := range clients {
+		select {
+		case ch <- evt:
+		default:
+		}
+	}
+}
+
+func fireCallbacks(raw any) {
+	eventCallbacksMu.Lock()
+	cbs := make([]func(any), 0, len(eventCallbacks))
+	for _, cb := range eventCallbacks {
+		cbs = append(cbs, cb)
+	}
+	eventCallbacksMu.Unlock()
+	for _, cb := range cbs {
+		go func(fn func(any)) {
+			defer recover()
+			fn(raw)
+		}(cb)
+	}
+}
 
 func hasTopic(topics []string, topic string) bool {
 	for _, t := range topics {
@@ -123,8 +147,8 @@ func topicListener(sub *pubsub.Subscription, topic string) {
 		if err != nil {
 			return
 		}
-		isme := msg.ReceivedFrom == bootres.PeerID
-		log.Println("<< submsg", isme, msg.ReceivedFrom.ShortString(), topic, len(msg.Data), substr(string(msg.Data), 48))
+		// isme := msg.ReceivedFrom == bootres.PeerID
+		// log.Println("<< submsg", isme, msg.ReceivedFrom.ShortString(), topic, len(msg.Data), substr(string(msg.Data), 48))
 		evt := Event{Type: "pubsub", Topic: topic, Value: msg}
 		clientsMu.RLock()
 		for ch, topics := range clientTopics {
@@ -136,6 +160,8 @@ func topicListener(sub *pubsub.Subscription, topic string) {
 			}
 		}
 		clientsMu.RUnlock()
+
+		fireCallbacks(msg)
 	}
 }
 
@@ -163,13 +189,14 @@ func PublishTopic(topic string, data []byte) error {
 	if err != nil {
 		return err
 	}
-	log.Printf("[pso] subscribe topic=%q, peers=%d", topic, len(bootres.PSO.ListPeers(topic)))
+	// log.Printf("[pso] subscribe topic=%q, peers=%d", topic, len(bootres.PSO.ListPeers(topic)))
 	if len(data) > maxPublishSize {
 		return fmt.Errorf("payload too large: %d bytes, max %d", len(data), maxPublishSize)
 	}
 	err = t.Publish(context.Background(), data)
 	if err == nil && len(bootres.PSO.ListPeers(topic)) == 0 {
-		return fmt.Errorf("no pso.ListPeers for %v", topic)
+		err = fmt.Errorf("no peers found for %v", topic)
+		log.Printf("[pso] publish topic=%q, peers=%d", topic, len(bootres.PSO.ListPeers(topic)))
 	}
 	return err
 }
@@ -728,4 +755,30 @@ func CollectTopics() []TopicEntry {
 		return out[i].Topic < out[j].Topic
 	})
 	return out
+}
+
+// OnEvent registers a callback for all raw events (libp2p system events, pubsub messages, etc).
+// The same function (by pointer identity) cannot be registered twice.
+// Note: each closure literal is a distinct pointer; reuse the same function variable for dedup.
+func OnEvent(fn func(any)) error {
+	ptr := reflect.ValueOf(fn).Pointer()
+	eventCallbacksMu.Lock()
+	defer eventCallbacksMu.Unlock()
+	if _, ok := eventCallbacks[ptr]; ok {
+		return fmt.Errorf("callback already registered")
+	}
+	eventCallbacks[ptr] = fn
+	return nil
+}
+
+// OffEvent removes a previously registered event callback.
+func OffEvent(fn func(any)) error {
+	ptr := reflect.ValueOf(fn).Pointer()
+	eventCallbacksMu.Lock()
+	defer eventCallbacksMu.Unlock()
+	if _, ok := eventCallbacks[ptr]; !ok {
+		return fmt.Errorf("callback not found")
+	}
+	delete(eventCallbacks, ptr)
+	return nil
 }

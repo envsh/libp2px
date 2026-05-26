@@ -393,8 +393,6 @@ func Bootstrap(ctx context.Context, cfg Config) (*BootNode, error) {
 	)
 	if err != nil { log.Println(err) }
 
-	fmt.Println("=== Phase 4.5: Waiting for AutoNAT ===")
-
 	log.Println("bootstrap ret...")
 	bsres.PSO = pso
 	return bsres, nil
@@ -471,7 +469,7 @@ func (bootres *BootNode) myDiscoveryV3() {
 			}
 			time.Sleep(3*time.Second)
 			for _, p := range known {
-				if IsPeerInAnyTopic(p.ID) || IsPeerConnected(p.ID) {
+				if IsPeerInAnyTopic(p.ID) || IsPeerConnected(p.ID, true) {
 					continue
 				}
 				err = tryConnect(p)

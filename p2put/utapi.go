@@ -361,7 +361,7 @@ func IsPeerInAnyTopic(pid any) bool {
 	return false
 }
 
-func IsPeerConnected(pid any) bool {
+func IsPeerConnected(pid any, out bool) bool {
 	p, err := toPeerID(pid)
 	if err != nil {
 		return false
@@ -371,7 +371,9 @@ func IsPeerConnected(pid any) bool {
 	}
 	for _, c := range bootres.Host.Network().Conns() {
 		if c.RemotePeer() == p {
-			return true
+			if out &&  c.Stat().Direction == network.DirOutbound {
+				return true
+			}
 		}
 	}
 	return false

@@ -11,7 +11,7 @@ import (
 	// "flag"
 	"fmt"
 	"hash/fnv"
-	"math/rand"
+	// "math/rand"
 	"net"
 	"os"
 	"log"
@@ -446,7 +446,7 @@ func (bsres *BootNode) bootDHT(ctx context.Context, bootstrapInfos []peer.AddrIn
 // only find HubName
 func (bootres *BootNode) myDiscoveryV3() {
 	rd := bootres.Discovery
-	dht := bootres.DHT
+	// dht := bootres.DHT
 	tag := currConfig.HubName
 	sec100 := 120*time.Second
 	known := make(map[string]peer.AddrInfo)
@@ -465,99 +465,13 @@ func (bootres *BootNode) myDiscoveryV3() {
 		}
 
 		btime := time.Now()
-		var err error
-		var p2 peer.AddrInfo
-		time.Sleep(3*time.Second)
-		// random select 3 and try connect
-		for j := 0; ; j++ {
-			if time.Since(btime) > sec100 {
-				break
-			}
-			time.Sleep(3*time.Second)
-			keys := []string{}
-			for k, _ := range known {
-				keys = append(keys, k)
-			}
-			// for _, p := range known {
-			for n := 0; n < len(keys); n++ {
-				key := keys[int(rand.Uint32()/2)%len(keys)]
-				p := known[key]
-
-				log.Println("prepconn rc", p.ID.ShortString(), keys)
-				if IsPeerInAnyTopic(p.ID) || IsPeerConnected(p.ID, true) {
-					continue
-				}
-				// hotfix lost but still not cleared nodes
-				if strings.HasSuffix(p.ID.String(), "6Y5TDQ") ||
-					strings.HasSuffix(p.ID.String(), "2u1qRU") {
-					continue
-				}
-				err = tryConnect(p)
-				p2 = p
-				if err == nil {
-					// if is relay, try openstream direct
-					c := connByPeerID(p.ID)
-					if c != nil {
-						if isRelayAddr(c.RemoteMultiaddr()) {
-							//
-							log.Println("conn relayed, try direct", p.ID.ShortString())
-							// 尝试直连目标
-							// ctx1 := network.WithAllowLimitedConn(, "reason")
-							ctx1 := context.Background()
-							directCtx, cancel := context.WithTimeout(ctx1, 5*time.Second)
-							stream, err := bootres.Host.NewStream(directCtx, p.ID, "/myapp/dirfoo/1.0")
-							// stream, err := c.NewStream(directCtx)
-							log.Println("direct conn:", p.ID.ShortString(), "err:", err)
-							if err == nil {
-								stream.Close()
-							}
-							cancel()
-						}
-					}
-					break
-				}
-				if currConfig.IsMobile { break }
-
-				// udp heavy
-				time.Sleep(time.Second)
-				t1 := time.Now()
-				log.Println("(UDP) dht.FindPeer'ing ...", p2.ID.ShortString())
-				// findAndConnect(p2.ID.String(), rd, 1)
-				addrinfo, err := dht.FindPeer(context.Background(), p2.ID)
-				_ = addrinfo
-				log.Println("(UDP) dht.FindPeer'ed ...", time.Since(t1), p2.ID.ShortString(), addrinfo, err)
-				if err != nil {
-				}else{
-					tryConnect(addrinfo)
-				}
-				break
-			}
-			time.Sleep(13*time.Second)
-		}
-		if err != nil {
-			// time.Sleep(5*time.Second)
-			// findAndConnect(p2.ID.String(), rd, 1)
-			// addrinfo, err := dht.FindPeer(context.Background(), p2.ID)
-			// _ = addrinfo
-			// if err != nil {
-			// }
-		}
-
+		newconnfixer(known, sec100).dofix()
 		dur := time.Since(btime)
 		if dur > sec100 {
 			continue
 		}
 	    time.Sleep(sec100-dur)
 	}
-}
-
-func connByPeerID(pid peer.ID) network.Conn {
-    for _, c := range bootres.Host.Network().Conns() {
-        if c.RemotePeer() == pid {
-            return c
-        }
-    }
-    return nil
 }
 
 func myDiscoveryV2ddd() {

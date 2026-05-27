@@ -48,7 +48,7 @@ func handleTunnel(s network.Stream) {
 	seq := atomic.AddInt64(&Stats.ConnSeq, 1)
 	start := time.Now()
 	peerid := s.Conn().RemotePeer().ShortString()
-	log.Printf("[pbtunnel] conn=%d %v\n", seq, peerid)
+	log.Printf("[pbtunnel] conn=%d newed: %v\n", seq, peerid)
 
 	if ShouldReject != nil && ShouldReject(s) {
 		s.Reset()
@@ -193,9 +193,9 @@ func (s *DriftServer) handle(conn net.Conn) {
 	openStart := time.Now()
 	p2pStream, err := p2put.OpenStream(context.Background(), s.peerID, tunnelProto)
 	openDur := time.Since(openStart)
+	peerid, _ := peer.Decode(s.peerID)
+	log.Printf("[pbtunnel] drift dial %s: %v (open=%s)", peerid.ShortString(), err, openDur.Round(time.Millisecond))	
 	if err != nil {
-		pid, _ := peer.Decode(s.peerID)
-		log.Printf("[pbtunnel] drift dial %s: %v (open=%s)", pid.ShortString(), err, openDur.Round(time.Millisecond))
 		return
 	}
 
@@ -204,6 +204,7 @@ func (s *DriftServer) handle(conn net.Conn) {
 	wg.Add(2)
 
 	go func() {
+		defer log.Println("xfer tun <- sock", peerid.ShortString())
 		defer wg.Done()
 		buf := make([]byte, 32*1024)
 		for {
@@ -222,6 +223,7 @@ func (s *DriftServer) handle(conn net.Conn) {
 	}()
 
 	go func() {
+		defer log.Println("xfer tun -> sock", peerid.ShortString())
 		defer wg.Done()
 		buf := make([]byte, 32*1024)
 		for {
@@ -236,6 +238,7 @@ func (s *DriftServer) handle(conn net.Conn) {
 		}
 	}()
 
+	log.Println("wg.Wait() ...", peerid.ShortString())
 	wg.Wait()
 	dur := time.Since(start)
 	pid, _ := peer.Decode(s.peerID)

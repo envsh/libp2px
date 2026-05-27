@@ -16,7 +16,10 @@ import (
 
 var ShouldReject func(network.Stream) bool
 
-const tunnelProto = "tunnel/1.0"
+const (
+	tunnelProto = "tunnel/1.0"
+	bufSize     = 3072
+)
 
 var Stats struct {
 	BytesSent int64
@@ -80,7 +83,7 @@ func handleTunnel(s network.Stream) {
 		defer log.Println("xfer tun <- sock", seq, peerid)
 		defer wg.Done()
 		defer closeStream()
-		buf := make([]byte, 32*1024)
+		buf := make([]byte, bufSize)
 		for {
 			conn.SetReadDeadline(time.Now().Add(5 * time.Minute))
 			n, rerr := conn.Read(buf)
@@ -102,7 +105,7 @@ func handleTunnel(s network.Stream) {
 		defer log.Println("xfer tun -> sock", seq, peerid)
 		defer wg.Done()
 		defer connClose()
-		buf := make([]byte, 32*1024)
+		buf := make([]byte, bufSize)
 		for {
 			s.SetReadDeadline(time.Now().Add(5 * time.Minute))
 			n, rerr := s.Read(buf)
@@ -182,9 +185,12 @@ func (s *DriftServer) Close() error {
 }
 
 func (s *DriftServer) handle(conn net.Conn) {
-	defer conn.Close()
 	remoteAddr := conn.RemoteAddr().String()
 	start := time.Now()
+
+	var connCloseOnce sync.Once
+	connClose := func() { connCloseOnce.Do(func() { conn.Close() }) }
+	defer connClose()
 
 	openStart := time.Now()
 	p2pStream, err := p2put.OpenStream(context.Background(), s.peerID, tunnelProto)
@@ -195,6 +201,10 @@ func (s *DriftServer) handle(conn net.Conn) {
 		return
 	}
 
+	var streamCloseOnce sync.Once
+	streamClose := func() { streamCloseOnce.Do(func() { p2pStream.Close() }) }
+	defer streamClose()
+
 	var localSent, localRecv int64
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -202,7 +212,8 @@ func (s *DriftServer) handle(conn net.Conn) {
 	go func() {
 		defer log.Println("xfer tun <- sock", peerid.ShortString())
 		defer wg.Done()
-		buf := make([]byte, 32*1024)
+		defer streamClose()
+		buf := make([]byte, bufSize)
 		for {
 			n, rerr := conn.Read(buf)
 			if n > 0 {
@@ -221,7 +232,8 @@ func (s *DriftServer) handle(conn net.Conn) {
 	go func() {
 		defer log.Println("xfer tun -> sock", peerid.ShortString())
 		defer wg.Done()
-		buf := make([]byte, 32*1024)
+		defer connClose()
+		buf := make([]byte, bufSize)
 		for {
 			n, rerr := p2pStream.Read(buf)
 			if n > 0 {

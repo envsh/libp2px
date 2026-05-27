@@ -455,10 +455,14 @@ func (bootres *BootNode) myDiscoveryV3() {
 		time.Sleep(3*time.Second)
 		log.Println("start DHT finding...", i)
 		result := findAndConnect(tag, rd, 0)
+		validcnt := 0
 		for _, p := range result {
+			// log.Println(p.ID.ShortString(), p.Addrs)
+			if len(p.Addrs) == 0 { continue }
 			known[p.ID.String()] = p
+			validcnt += 1
 		}
-		log.Println("found peers count:", len(known), i)
+		log.Println("found peers count:", len(known), "valid", validcnt, "round", i)
 		if i < 3 && len(result) == 0 {
 			time.Sleep(time.Duration(2+i)*time.Second)
 			continue
@@ -532,7 +536,9 @@ func findAndConnect(tag string, rd *routing.RoutingDiscovery, limit int) []peer.
 		if p.ID == bootres.Host.ID() || p.ID == "" {
 			continue
 		}
-		found = append(found, p)
+		if len(p.Addrs) > 0 {
+			found = append(found, p)
+		}
 		if true { continue }
 
 		if bootres.Host.Network().Connectedness(p.ID) != network.Connected {

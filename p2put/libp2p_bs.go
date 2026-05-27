@@ -420,8 +420,11 @@ func (bsres *BootNode) bootDHT(ctx context.Context, bootstrapInfos []peer.AddrIn
 	if err := kadDHT.Bootstrap(bootCtx); err != nil {
 		fmt.Printf("  [!] DHT bootstrap warning: %v\n", err)
 	}
+	errch := kadDHT.RefreshRoutingTable()
+	btime := time.Now()
+	<- errch
 
-	fmt.Println("[*] Waiting for DHT routing table to populate...")
+	log.Println("[*] Waiting for DHT routing table to populate...", time.Since(btime))
 	routingDiscovery := routing.NewRoutingDiscovery(kadDHT)
 	testCID := currConfig.HubName // "libp2p-bootstrap-test"
 	discovery.Advertise(ctx, routingDiscovery, testCID) // broadcast self
@@ -648,6 +651,11 @@ func myEventSuber(h host.Host, evts ...any) {
 				bootres.NATStatus = e.Reachability
 			case event.EvtPeerConnectednessChanged:
 				handlePeerConnectednessChanged(e)
+				if e.Connectedness == network.Connected {
+					if addr := IsGoodPeer(e.Peer); addr != "" {
+						log.Printf("[goodpeer] connected: %s addr=%s", e.Peer.ShortString(), addr)
+					}
+				}
 			case event.EvtLocalAddressesUpdated:
 				go func(){
 					// bootres.DHT.RefreshRoutingTable()

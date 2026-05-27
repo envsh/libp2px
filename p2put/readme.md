@@ -14,3 +14,7 @@ go-libp2p 0.36.2 based:
 maybe x5+
 
 go-libp2p 0.46 upstream: need test
+
+### not bootstrap but active node
+
+* /ip4/65.109.60.254/tcp/4001 12D3KooWL96RJHMjvPzkDzEwSBNei4Ftak7n8gF5Tfn8Dc1cSYQn

@@ -2,12 +2,14 @@ package p2put
 
 import (
 	"fmt"
+	"log"
 	"net"
 	"time"
 	"context"
+	"strings"
 
 	"github.com/libp2p/go-libp2p/core/host"
-	// "github.com/libp2p/go-libp2p/core/network"
+	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/multiformats/go-multiaddr"
 	// "github.com/libp2p/go-libp2p/core/event"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -177,4 +179,74 @@ func myAddrsFactory(addrs []multiaddr.Multiaddr) []multiaddr.Multiaddr {
 		// log.Println("addrs filter", len(addrs), "=>", len(out))
 	}
 	return out
+}
+
+func IsGoodPeer(pid any) string {
+	p, err := toPeerID(pid)
+	if err != nil {
+		return ""
+	}
+	if isBootstrapPeer(p) {
+		return ""
+	}
+	if bootres == nil || bootres.Host == nil {
+		return ""
+	}
+	for _, a := range bootres.Host.Peerstore().Addrs(p) {
+		if isRelayAddr(a) {
+			continue
+		}
+		s := a.String()
+		if strings.Contains(s, "/tcp/4001") || strings.Contains(s, "/tcp/443") {
+			return s
+		}
+	}
+	for _, c := range bootres.Host.Network().Conns() {
+		if c.RemotePeer() != p {
+			continue
+		}
+		if isRelayAddr(c.RemoteMultiaddr()) {
+			continue
+		}
+		s := c.RemoteMultiaddr().String()
+		if strings.Contains(s, "/tcp/4001") || strings.Contains(s, "/tcp/443") {
+			return s
+		}
+	}
+	return ""
+}
+
+func ConnectViaRelay(ctx context.Context, relayMa, targetPeerID string) error {
+	if bootres == nil || bootres.Host == nil {
+		return fmt.Errorf("libp2p not ready")
+	}
+	h := bootres.Host
+
+	relayInfo, err := peer.AddrInfoFromString(relayMa)
+	if err != nil {
+		return fmt.Errorf("parse relay addr: %w", err)
+	}
+	if h.Network().Connectedness(relayInfo.ID) != network.Connected {
+		if err := h.Connect(ctx, *relayInfo); err != nil {
+			return fmt.Errorf("connect relay: %w", err)
+		}
+		log.Printf("[relay] connected to relay %s", relayInfo.ID.ShortString())
+	}
+
+	circuitAddr, err := multiaddr.NewMultiaddr(
+		relayMa + "/p2p-circuit/p2p/" + targetPeerID,
+	)
+	if err != nil {
+		return fmt.Errorf("build circuit addr: %w", err)
+	}
+	targetInfo, err := peer.AddrInfoFromP2pAddr(circuitAddr)
+	if err != nil {
+		return fmt.Errorf("parse circuit addr: %w", err)
+	}
+
+	if err := h.Connect(ctx, *targetInfo); err != nil {
+		return fmt.Errorf("connect via relay: %w", err)
+	}
+	log.Printf("[relay] connected to %s via %s", targetPeerID, relayInfo.ID.ShortString())
+	return nil
 }

@@ -14,6 +14,7 @@ func main() {
 	cfg := p2put.ParseConfig()
 	cfg.Dht = false
 	_ = cfg
+	cfg.Topics = []string{"reddit", "hacknews", "twitter", "v2ex", "bluesky", "stackof"}
 
 	// cfg.Fset.Parse(os.Args[1:])
 	// cfg.KeyFile = *keyFile

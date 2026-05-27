@@ -198,6 +198,15 @@ func IsGoodPeer(pid any) string {
 		}
 		s := a.String()
 		if strings.Contains(s, "/tcp/4001") || strings.Contains(s, "/tcp/443") {
+			if ipStr, err := a.ValueForProtocol(multiaddr.P_IP4); err == nil {
+				if isPrivateIP(net.ParseIP(ipStr)) {
+					continue
+				}
+			} else if ipStr, err := a.ValueForProtocol(multiaddr.P_IP6); err == nil {
+				if isPrivateIP(net.ParseIP(ipStr)) {
+					continue
+				}
+			}
 			return s
 		}
 	}
@@ -210,6 +219,15 @@ func IsGoodPeer(pid any) string {
 		}
 		s := c.RemoteMultiaddr().String()
 		if strings.Contains(s, "/tcp/4001") || strings.Contains(s, "/tcp/443") {
+			if ipStr, err := c.RemoteMultiaddr().ValueForProtocol(multiaddr.P_IP4); err == nil {
+				if isPrivateIP(net.ParseIP(ipStr)) {
+					continue
+				}
+			} else if ipStr, err := c.RemoteMultiaddr().ValueForProtocol(multiaddr.P_IP6); err == nil {
+				if isPrivateIP(net.ParseIP(ipStr)) {
+					continue
+				}
+			}
 			return s
 		}
 	}

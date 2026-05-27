@@ -313,9 +313,7 @@ func Bootstrap(ctx context.Context, cfg Config) (*BootNode, error) {
 
 	myID := h.ID()
 	fmt.Printf("[+] Host created, Peer ID: %s\n", myID.String())
-	fmt.Println("    [Relay]           Enabled")
 	fmt.Println("    [AutoRelay]       Enabled (5 relays, 5 candidates, 60s boot delay)")
-	fmt.Println("    [HolePunching]    Enabled")
 	for _, addr := range h.Addrs() {
 		fmt.Printf("    Listening: %s/p2p/%s\n", addr, myID)
 	}
@@ -473,6 +471,11 @@ func (bootres *BootNode) myDiscoveryV3() {
 			time.Sleep(3*time.Second)
 			for _, p := range known {
 				if IsPeerInAnyTopic(p.ID) || IsPeerConnected(p.ID, true) {
+					continue
+				}
+				// hotfix lost but still not cleared nodes
+				if strings.HasSuffix(p.ID.String(), "6Y5TDQ") ||
+					strings.HasSuffix(p.ID.String(), "2u1qRU") {
 					continue
 				}
 				err = tryConnect(p)

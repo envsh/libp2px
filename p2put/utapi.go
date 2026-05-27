@@ -255,9 +255,10 @@ type ConnResp struct {
 }
 
 type DHTResp struct {
-	Size   int      `json:"size"`
-	Peers  []string `json:"peers"`
+	ClusterSize int `json:"cluster_size"`
 	Topics []string `json:"topics"`
+	PeerCount   int      `json:"peer_count"`
+	Peers  []string `json:"peers"`
 }
 
 type StorePeerEntry struct {
@@ -627,7 +628,7 @@ func CollectDHT() (DHTResp, error) {
 	log.Println(topics)
 
 	return DHTResp{
-		Size:  rt.Size(),
+		PeerCount:  rt.Size(),
 		Peers: strs,
 		Topics: topics,
 	}, nil

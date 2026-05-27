@@ -61,6 +61,18 @@ func OpenStream(ctx context.Context, peerIDStr string, name string) (network.Str
 	if bootres == nil || bootres.Host == nil {
 		return nil, fmt.Errorf("host not ready")
 	}
+	ctx = network.WithAllowLimitedConn(ctx, name+"/force-relay")
+	return bootres.Host.NewStream(ctx, p, fullProtoID(name))
+}
+
+func OpenStreamDirect(ctx context.Context, peerIDStr string, name string) (network.Stream, error) {
+	p, err := peer.Decode(peerIDStr)
+	if err != nil {
+		return nil, fmt.Errorf("decode peer id: %w", err)
+	}
+	if bootres == nil || bootres.Host == nil {
+		return nil, fmt.Errorf("host not ready")
+	}
 	return bootres.Host.NewStream(ctx, p, fullProtoID(name))
 }
 

@@ -11,6 +11,8 @@ import (
 	"github.com/libp2p/go-libp2p/core/network"
 )
 
+var ShouldReject func(network.Stream) bool
+
 const (
 	echoProto   = "echo/1.0"
 	maxEchoLen  = 64 * 1024
@@ -22,6 +24,11 @@ func init() {
 		defer s.Close()
 		defer func() { recover() }()
 		log.Printf("[pbecho] from %s", s.Conn().RemotePeer().ShortString())
+
+		if ShouldReject != nil && ShouldReject(s) {
+			s.Reset()
+			return
+		}
 
 		var buf bytes.Buffer
 		readCh := make(chan error, 1)

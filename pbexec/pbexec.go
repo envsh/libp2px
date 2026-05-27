@@ -21,6 +21,8 @@ const (
 	readTimeout  = 10 * time.Second
 )
 
+var ShouldReject func(network.Stream) bool
+
 type ExecResult struct {
 	Stdout   string `json:"stdout"`
 	Stderr   string `json:"stderr"`
@@ -46,6 +48,11 @@ func init() {
 func handleExec(s network.Stream) {
 	defer s.Close()
 	defer func() { recover() }()
+
+	if ShouldReject != nil && ShouldReject(s) {
+		s.Reset()
+		return
+	}
 
 	type readRes struct {
 		buf []byte

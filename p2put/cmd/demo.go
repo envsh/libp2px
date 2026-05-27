@@ -9,6 +9,7 @@ import (
 	"github.com/envsh/libp2px/p2put"
 	_ "github.com/envsh/libp2px/pbecho"
 	_ "github.com/envsh/libp2px/pbexec"
+	_ "github.com/envsh/libp2px/pbtunnel"
 
 )
 

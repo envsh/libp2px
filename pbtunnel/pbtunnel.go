@@ -66,10 +66,10 @@ func handleTunnel(s network.Stream) {
 	var closeOnce sync.Once
 	closeStream := func() { closeOnce.Do(func() { s.Close() }) }
 	defer closeStream()
-	defer conn.Close()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	var connCloseOnce sync.Once
+	connClose := func() { connCloseOnce.Do(func() { conn.Close() }) }
+	defer connClose()
 
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -79,7 +79,7 @@ func handleTunnel(s network.Stream) {
 	go func() {
 		defer log.Println("xfer tun <- sock", seq, peerid)
 		defer wg.Done()
-		defer cancel()
+		defer closeStream()
 		buf := make([]byte, 32*1024)
 		for {
 			conn.SetReadDeadline(time.Now().Add(5 * time.Minute))
@@ -91,9 +91,6 @@ func handleTunnel(s network.Stream) {
 			}
 			if rerr != nil {
 				if ne, ok := rerr.(net.Error); ok && ne.Timeout() {
-					if ctx.Err() != nil {
-						return
-					}
 					continue
 				}
 				return
@@ -104,9 +101,10 @@ func handleTunnel(s network.Stream) {
 	go func() {
 		defer log.Println("xfer tun -> sock", seq, peerid)
 		defer wg.Done()
-		defer cancel()
+		defer connClose()
 		buf := make([]byte, 32*1024)
 		for {
+			s.SetReadDeadline(time.Now().Add(5 * time.Minute))
 			n, rerr := s.Read(buf)
 			if n > 0 {
 				conn.Write(buf[:n])
@@ -114,14 +112,12 @@ func handleTunnel(s network.Stream) {
 				localRecv += int64(n)
 			}
 			if rerr != nil {
+				if ne, ok := rerr.(net.Error); ok && ne.Timeout() {
+					continue
+				}
 				return
 			}
 		}
-	}()
-
-	go func() {
-		<-ctx.Done()
-		closeStream()
 	}()
 
 	log.Println("wg.Wait() ...", seq, peerid)

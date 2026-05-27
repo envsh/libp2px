@@ -1,26 +1,51 @@
 package pbecho
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"log"
+	"time"
 
 	"github.com/envsh/libp2px/p2put"
 	"github.com/libp2p/go-libp2p/core/network"
 )
 
-const echoProto = "echo/1.0"
+const (
+	echoProto   = "echo/1.0"
+	maxEchoLen  = 64 * 1024
+	readTimeout = 10 * time.Second
+)
 
 func init() {
 	p2put.MustRegisterProtocol(echoProto, func(s network.Stream) {
 		defer s.Close()
+		defer func() { recover() }()
 		log.Printf("[pbecho] from %s", s.Conn().RemotePeer().ShortString())
+
+		var buf bytes.Buffer
+		readCh := make(chan error, 1)
+		go func() {
+			_, err := io.Copy(&buf, io.LimitReader(s, maxEchoLen))
+			readCh <- err
+		}()
+		select {
+		case err := <-readCh:
+			if err != nil {
+				log.Printf("[pbecho] read error: %v", err)
+				return
+			}
+		case <-time.After(readTimeout):
+			log.Printf("[pbecho] read timeout")
+			return
+		}
+
 		if _, err := io.WriteString(s, "Re: "); err != nil {
 			log.Printf("[pbecho] write prefix error: %v", err)
 			return
 		}
-		if _, err := io.Copy(s, s); err != nil {
-			log.Printf("[pbecho] copy error: %v", err)
+		if _, err := s.Write(buf.Bytes()); err != nil {
+			log.Printf("[pbecho] write echo error: %v", err)
 		}
 	})
 }

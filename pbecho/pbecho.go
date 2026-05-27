@@ -40,6 +40,9 @@ func Echo(peerID, msg string, ctx ...context.Context) (string, error) {
 	if _, err := s.Write([]byte(msg)); err != nil {
 		return "", err
 	}
+	if sc, ok := s.(interface{ CloseWrite() error }); ok {
+		sc.CloseWrite()
+	}
 	buf, err := io.ReadAll(s)
 	if err != nil {
 		return "", err

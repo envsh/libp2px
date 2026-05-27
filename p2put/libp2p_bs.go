@@ -195,6 +195,7 @@ func mainLibp2p(cfg Config) {
 
 	myDumpBoot(res.Host, res.DHT)
 	bootres = res
+	replayProtocols()
 
 	loadPeerstore(res.Host, peerstorePath)
 

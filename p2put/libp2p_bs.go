@@ -11,10 +11,13 @@ import (
 	// "flag"
 	"fmt"
 	"hash/fnv"
+	"math/rand"
 	"net"
 	"os"
 	"log"
 	"strings"
+	// "slices"
+	// "maps"
 	"sync"
 	"time"
 
@@ -330,8 +333,9 @@ func Bootstrap(ctx context.Context, cfg Config) (*BootNode, error) {
 		return nil, fmt.Errorf("no valid bootstrap nodes")
 	}
 
-	//
+	// useless
 	for i, v := range extraStaticRelays {
+		if true { break }
 		log.Println(i, v)
 		btime := time.Now()
 		addr, err := peer.AddrInfoFromString(v)
@@ -470,7 +474,16 @@ func (bootres *BootNode) myDiscoveryV3() {
 				break
 			}
 			time.Sleep(3*time.Second)
-			for _, p := range known {
+			keys := []string{}
+			for k, _ := range known {
+				keys = append(keys, k)
+			}
+			// for _, p := range known {
+			for n := 0; n < len(keys); n++ {
+				key := keys[int(rand.Uint32()/2)%len(keys)]
+				p := known[key]
+
+				log.Println("prepconn rc", p.ID.ShortString(), keys)
 				if IsPeerInAnyTopic(p.ID) || IsPeerConnected(p.ID, true) {
 					continue
 				}
@@ -481,7 +494,28 @@ func (bootres *BootNode) myDiscoveryV3() {
 				}
 				err = tryConnect(p)
 				p2 = p
-				if err == nil { break }
+				if err == nil {
+					// if is relay, try openstream direct
+					c := connByPeerID(p.ID)
+					if c != nil {
+						if isRelayAddr(c.RemoteMultiaddr()) {
+							//
+							log.Println("conn relayed, try direct", p.ID.ShortString())
+							// 尝试直连目标
+							// ctx1 := network.WithAllowLimitedConn(, "reason")
+							ctx1 := context.Background()
+							directCtx, cancel := context.WithTimeout(ctx1, 5*time.Second)
+							stream, err := bootres.Host.NewStream(directCtx, p.ID, "/myapp/dirfoo/1.0")
+							// stream, err := c.NewStream(directCtx)
+							log.Println("direct conn:", p.ID.ShortString(), "err:", err)
+							if err == nil {
+								stream.Close()
+							}
+							cancel()
+						}
+					}
+					break
+				}
 				if currConfig.IsMobile { break }
 
 				// udp heavy
@@ -515,6 +549,15 @@ func (bootres *BootNode) myDiscoveryV3() {
 		}
 	    time.Sleep(sec100-dur)
 	}
+}
+
+func connByPeerID(pid peer.ID) network.Conn {
+    for _, c := range bootres.Host.Network().Conns() {
+        if c.RemotePeer() == pid {
+            return c
+        }
+    }
+    return nil
 }
 
 func myDiscoveryV2ddd() {

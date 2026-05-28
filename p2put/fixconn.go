@@ -139,7 +139,11 @@ func (fxr *connfixer) connect_direct(p peer.AddrInfo) error {
 	// ctx1 := network.WithAllowLimitedConn(, "reason")
 	ctx1 := context.Background()
 	ctx2, cancel := context.WithTimeout(ctx1, 5*time.Second)
-	stream, err := bootres.Host.NewStream(ctx2, p.ID, RelayHopProtocol)
+	// 所有节点都有的协议，防止出现
+	// concurrent active dial through the same relay failed with a protocol error
+	// /ipfs/ping/1.0.0
+	// /ipfs/id/1.0.0
+	stream, err := bootres.Host.NewStream(ctx2, p.ID, "/ipfs/ping/1.0.0")
 	// stream, err := c.NewStream(directCtx)
 	log.Println("direct conn:", p.ID.ShortString(), "err:", err)
 	if err == nil {

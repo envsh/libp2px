@@ -76,7 +76,7 @@ func (fxr *connfixer) dofix() {
 			}
 
 			if len(p.Addrs) == 0 {
-				err = fxr.connect_relay(p.ID)
+				err = tryConnect(p)
 			} else {
 				err = tryConnect(p)
 			}
@@ -132,14 +132,14 @@ func (fxr *connfixer) connect_outbound() {
 
 }
 
-func (fxr *connfixer) connect_direct(p peer.AddrInfo) {
+func (fxr *connfixer) connect_direct(p peer.AddrInfo) error {
 	//
 	log.Println("conn relayed, try direct", p.ID.ShortString())
 	// 尝试直连目标
 	// ctx1 := network.WithAllowLimitedConn(, "reason")
 	ctx1 := context.Background()
 	ctx2, cancel := context.WithTimeout(ctx1, 5*time.Second)
-	stream, err := bootres.Host.NewStream(ctx2, p.ID, "/myapp/dirfoo/1.0")
+	stream, err := bootres.Host.NewStream(ctx2, p.ID, RelayHopProtocol)
 	// stream, err := c.NewStream(directCtx)
 	log.Println("direct conn:", p.ID.ShortString(), "err:", err)
 	if err == nil {
@@ -147,79 +147,13 @@ func (fxr *connfixer) connect_direct(p peer.AddrInfo) {
 	}
 	cancel()
 
+	return err
 }
 
+// 需要预先知道对方在哪个relay上。没啥用。
 func (fxr *connfixer) connect_relay(peerid peer.ID) error {
 	if bootres == nil || bootres.Host == nil {
 		return fmt.Errorf("libp2p not ready")
-	}
-
-	h := bootres.Host
-	tryVia := func(pid peer.ID) error {
-		if isBootstrapPeer(pid) {
-			return nil
-		}
-		if h.Network().Connectedness(pid) != network.Connected {
-			return nil
-		}
-		addr := IsGoodPeer(pid)
-		if addr == "" {
-			return nil
-		}
-		relayMa := addr + "/p2p/" + pid.String()
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		err := ConnectViaRelay(ctx, relayMa, peerid.String())
-		cancel()
-		if err != nil {
-			log.Printf("[relay] failed to %s via %s: %v", peerid.ShortString(), pid.ShortString(), err)
-			return err
-		}
-		log.Printf("[relay] connected to %s via %s", peerid.ShortString(), pid.ShortString())
-		return nil
-	}
-
-	stablePeersMu.RLock()
-	pids := []peer.ID{}
-	for pid := range stablePeers {
-		if pid == peerid { continue }
-		pids = append(pids, pid)
-	}
-	stablePeersMu.RUnlock()
-	for _, pid := range pids {
-		if err := tryVia(pid); err == nil {
-			stablePeersMu.RUnlock()
-			return nil
-		}
-	}
-
-	for _, c := range h.Network().Conns() {
-		pid := c.RemotePeer()
-		if pid == peerid {
-			continue
-		}
-		if isBootstrapPeer(pid) {
-			continue
-		}
-		if _, ok := stablePeers[pid]; ok {
-			continue
-		}
-		if h.Network().Connectedness(pid) != network.Connected {
-			continue
-		}
-		addr := IsGoodPeer(pid)
-		if addr == "" {
-			continue
-		}
-		relayMa := addr + "/p2p/" + pid.String()
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		err := ConnectViaRelay(ctx, relayMa, peerid.String())
-		cancel()
-		if err != nil {
-			log.Printf("[relay] failed to %s via %s: %v", peerid.ShortString(), pid.ShortString(), err)
-			continue
-		}
-		log.Printf("[relay] connected to %s via %s", peerid.ShortString(), pid.ShortString())
-		return nil
 	}
 
 	return fmt.Errorf("connect_relay: no relay to %s", peerid.ShortString())

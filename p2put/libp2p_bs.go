@@ -459,9 +459,18 @@ func (bootres *BootNode) myDiscoveryV3() {
 		validcnt := 0
 		for _, p := range result {
 			log.Println(p.ID.ShortString(), p.Addrs)
-			// if len(p.Addrs) == 0 { continue }
-			known[p.ID.String()] = p
-			validcnt += 1
+			if len(p.Addrs) == 0 {
+				if _, ok := known[p.ID.String()]; !ok {
+					known[p.ID.String()] = p
+				}
+			}else{
+				known[p.ID.String()] = p
+				validcnt += 1
+			}
+			if len(known[p.ID.String()].Addrs) == 0{
+				ps := bootres.Host.Peerstore()
+				p.Addrs = ps.Addrs(p.ID)
+			}
 		}
 		log.Println("found peers count:", len(known), "valid", validcnt, "round", i)
 		if i < 3 && len(result) == 0 {
@@ -490,6 +499,7 @@ func (bootres *BootNode) myDiscoveryV3() {
 	}
 }
 
+// 搜索所有的tags/topics，流量太大
 func myDiscoveryV2ddd() {
 	type tagState struct {
 		nextAt time.Time
@@ -544,13 +554,14 @@ func findAndConnect(tag string, rd *routing.RoutingDiscovery, limit int) []peer.
 		return nil
 	}
 	var found []peer.AddrInfo
-	for p := range peerChan {
+	var foundm = make(map[string]peer.AddrInfo)
+	for p := range peerChan { // 有重复值
 		if p.ID == bootres.Host.ID() || p.ID == "" {
 			continue
 		}
-		if len(p.Addrs) > 0 {
-			found = append(found, p)
-		}
+		op := foundm[p.ID.String()]
+		p.Addrs = append(p.Addrs, op.Addrs...)
+		foundm[p.ID.String()] = p
 		if true { continue }
 
 		if bootres.Host.Network().Connectedness(p.ID) != network.Connected {
@@ -570,6 +581,9 @@ func findAndConnect(tag string, rd *routing.RoutingDiscovery, limit int) []peer.
 			}
 			dialCancel()
 		}
+	}
+	for _, p := range foundm {
+		found = append(found, p)
 	}
 	return found
 }

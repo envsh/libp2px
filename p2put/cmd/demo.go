@@ -9,7 +9,7 @@ import (
 	"github.com/envsh/libp2px/p2put"
 	_ "github.com/envsh/libp2px/pbecho"
 	_ "github.com/envsh/libp2px/pbexec"
-	_ "github.com/envsh/libp2px/pbtunnel"
+	"github.com/envsh/libp2px/pbtunnel"
 
 )
 
@@ -22,6 +22,13 @@ func main() {
 	// cfg.Fset.Parse(os.Args[1:])
 	// cfg.KeyFile = *keyFile
 	// cfg.ListenPort = *port
+
+	proxy := pbtunnel.NewHTTPProxy()
+	go func() {
+		err := proxy.ListenAndServe(":9229")
+		log.Println(err)
+	}()
+	defer proxy.Close()
 
 	go p2put.MainLibp2p(cfg)
 	p2put.InstallRestHandler("/p2pin", nil)

@@ -63,6 +63,7 @@ func handleTunnel(s network.Stream) {
 	conn, err := net.DialTimeout("tcp", addr, 30*time.Second)
 	if err != nil {
 		log.Printf("[pbtunnel] dial %s: %v", addr, err)
+		s.Close()
 		return
 	}
 

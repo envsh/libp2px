@@ -89,9 +89,12 @@ func handleTunnel(s network.Stream) {
 			conn.SetReadDeadline(time.Now().Add(5 * time.Minute))
 			n, rerr := conn.Read(buf)
 			if n > 0 {
-				s.Write(buf[:n])
-				atomic.AddInt64(&Stats.BytesSent, int64(n))
-				localSent += int64(n)
+				wn, _ := writen(s, buf, n)
+				atomic.AddInt64(&Stats.BytesSent, int64(wn))
+				localSent += int64(wn)
+				if wn != n {
+					return
+				}
 			}
 			if rerr != nil {
 				if ne, ok := rerr.(net.Error); ok && ne.Timeout() {
@@ -111,9 +114,12 @@ func handleTunnel(s network.Stream) {
 			s.SetReadDeadline(time.Now().Add(5 * time.Minute))
 			n, rerr := s.Read(buf)
 			if n > 0 {
-				conn.Write(buf[:n])
-				atomic.AddInt64(&Stats.BytesRecv, int64(n))
-				localRecv += int64(n)
+				wn, _ := writen(conn, buf, n)
+				atomic.AddInt64(&Stats.BytesRecv, int64(wn))
+				localRecv += int64(wn)
+				if wn != n {
+					return
+				}
 			}
 			if rerr != nil {
 				if ne, ok := rerr.(net.Error); ok && ne.Timeout() {
@@ -218,8 +224,11 @@ func (s *DriftServer) handle(conn net.Conn) {
 		for {
 			n, rerr := conn.Read(buf)
 			if n > 0 {
-				p2pStream.Write(buf[:n])
-				localRecv += int64(n)
+				wn, _ := writen(p2pStream, buf, n)
+				localRecv += int64(wn)
+				if wn != n {
+					return
+				}
 			}
 			if rerr != nil {
 				if sc, ok := p2pStream.(interface{ CloseWrite() error }); ok {
@@ -238,8 +247,11 @@ func (s *DriftServer) handle(conn net.Conn) {
 		for {
 			n, rerr := p2pStream.Read(buf)
 			if n > 0 {
-				conn.Write(buf[:n])
-				localSent += int64(n)
+				wn, _ := writen(conn, buf, n)
+				localSent += int64(wn)
+				if wn != n {
+					return
+				}
 			}
 			if rerr != nil {
 				return

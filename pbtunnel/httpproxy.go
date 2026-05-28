@@ -85,11 +85,17 @@ func (p *HTTPProxy) serveConnect(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Hijacking not supported", http.StatusInternalServerError)
 		return
 	}
-	clientConn, _, err := hj.Hijack()
+	clientConn, rw, err := hj.Hijack()
 	if err != nil {
 		targetConn.Close()
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+
+	if n := rw.Reader.Buffered(); n > 0 {
+		data := make([]byte, n)
+		rw.Reader.Read(data)
+		targetConn.Write(data)
 	}
 
 	clientConn.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n"))
@@ -101,11 +107,12 @@ func (p *HTTPProxy) serveConnect(w http.ResponseWriter, r *http.Request) {
 	defer closeClient()
 	defer closeTarget()
 
+	var localSent, localRecv int64
+
 	log.Printf("[pbtunnel] proxy conn=%d newed: target=%s", seq, target)
 
 	var wg sync.WaitGroup
 	wg.Add(2)
-	var localSent, localRecv int64
 
 	go func() {
 		defer log.Println("xfer proxy <- target", seq)
@@ -116,8 +123,11 @@ func (p *HTTPProxy) serveConnect(w http.ResponseWriter, r *http.Request) {
 			clientConn.SetReadDeadline(time.Now().Add(5 * time.Minute))
 			n, rerr := clientConn.Read(buf)
 			if n > 0 {
-				targetConn.Write(buf[:n])
-				localSent += int64(n)
+				wn, _ := writen(targetConn, buf, n)
+				localSent += int64(wn)
+				if wn != n {
+					return
+				}
 			}
 			if rerr != nil {
 				if ne, ok := rerr.(net.Error); ok && ne.Timeout() {
@@ -137,8 +147,11 @@ func (p *HTTPProxy) serveConnect(w http.ResponseWriter, r *http.Request) {
 			targetConn.SetReadDeadline(time.Now().Add(5 * time.Minute))
 			n, rerr := targetConn.Read(buf)
 			if n > 0 {
-				clientConn.Write(buf[:n])
-				localRecv += int64(n)
+				wn, _ := writen(clientConn, buf, n)
+				localRecv += int64(wn)
+				if wn != n {
+					return
+				}
 			}
 			if rerr != nil {
 				if ne, ok := rerr.(net.Error); ok && ne.Timeout() {
@@ -154,6 +167,18 @@ func (p *HTTPProxy) serveConnect(w http.ResponseWriter, r *http.Request) {
 	dur := time.Since(start)
 	log.Printf("[pbtunnel] proxy conn=%d closed: target=%s sent=%d recv=%d dur=%s",
 		seq, target, localSent, localRecv, dur.Round(time.Millisecond))
+}
+
+func writen(dst io.Writer, buf []byte, n int) (int, error) {
+	wn := 0
+	for wn < n {
+		w, err := dst.Write(buf[wn:n])
+		wn += w
+		if err != nil {
+			return wn, err
+		}
+	}
+	return wn, nil
 }
 
 func (p *HTTPProxy) serveHTTPProxy(w http.ResponseWriter, r *http.Request) {

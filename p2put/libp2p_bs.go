@@ -471,6 +471,17 @@ func (bootres *BootNode) myDiscoveryV3() {
 		btime := time.Now()
 		newconnfixer(known, sec100).dofix()
 		dur := time.Since(btime)
+
+		log.Println("refresh mydht info...", bootres.PeerID.ShortString())
+		ctx1 := context.Background()
+		ctx2, cancel2 := context.WithTimeout(ctx1, 3*time.Second)
+
+		// 替代 RefreshRoutingTable()
+        // 轻量：只更新自己的路由信息
+        bootres.DHT.FindPeer(ctx2, bootres.PeerID)
+        // 或
+        // bootres.DHT.GetClosestPeers(ctx, bootres.PeerID.String())
+		cancel2()
 		if dur > sec100 {
 			continue
 		}

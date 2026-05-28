@@ -6,6 +6,7 @@ package p2put
 // inbound => outbound
 // quick build gossip mesh
 // too less conns < 3 => more 5+
+// query peer info from connected cluster peers
 
 import (
 	"time"

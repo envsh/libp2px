@@ -234,6 +234,7 @@ func IsGoodPeer(pid any) string {
 	return ""
 }
 
+// relayMa: /ip4/1.1.1.1/tcp/4001/p2p/QmRelayPeerID
 func ConnectViaRelay(ctx context.Context, relayMa, targetPeerID string) error {
 	if bootres == nil || bootres.Host == nil {
 		return fmt.Errorf("libp2p not ready")

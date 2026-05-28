@@ -371,6 +371,7 @@ func Bootstrap(ctx context.Context, cfg Config) (*BootNode, error) {
 		pubsub.WithPeerExchange(true),
 		pubsub.WithFloodPublish(true), // can publish to peer, not wait to mesh
 		pubsub.WithDirectPeers(staticRelays),
+		// pubsub.WithDiscovery(bsres.Discovery),
 		// pubsub.WithDirectPeers(dht.GetDefaultBootstrapPeerAddrInfos()),
 		// half default
 		pubsub.WithGossipSubParams(myGossipSubParams()),
@@ -457,8 +458,8 @@ func (bootres *BootNode) myDiscoveryV3() {
 		result := findAndConnect(tag, rd, 0)
 		validcnt := 0
 		for _, p := range result {
-			// log.Println(p.ID.ShortString(), p.Addrs)
-			if len(p.Addrs) == 0 { continue }
+			log.Println(p.ID.ShortString(), p.Addrs)
+			// if len(p.Addrs) == 0 { continue }
 			known[p.ID.String()] = p
 			validcnt += 1
 		}

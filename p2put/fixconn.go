@@ -78,7 +78,17 @@ func (fxr *connfixer) dofix() {
 				strings.HasSuffix(p.ID.String(), "2u1qRU") {
 				continue
 			}
-			err = tryConnect(p)
+			if len(p.Addrs) == 0 {
+				ctx1 := context.Background()
+				ctx2, cancel2 := context.WithTimeout(ctx1, 13*time.Second)
+				relayma := "/ip4/65.109.60.254/tcp/4001/p2p/12D3KooWL96RJHMjvPzkDzEwSBNei4Ftak7n8gF5Tfn8Dc1cSYQn"
+				// relayma := "/ip4/54.38.47.166/tcp/4001/p2p/QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb"
+				err = ConnectViaRelay(ctx2, relayma, p.ID.String())
+				log.Println(err)
+				cancel2()
+			} else {
+				err = tryConnect(p)
+			}
 			p2 = p
 			if err == nil {
 				// if is relay, try openstream direct
@@ -101,6 +111,14 @@ func (fxr *connfixer) dofix() {
 					}
 				}
 				break
+			} else {
+				ctx1 := context.Background()
+				ctx2, cancel2 := context.WithTimeout(ctx1, 13*time.Second)
+				relayma := "/ip4/65.109.60.254/tcp/4001/p2p/12D3KooWL96RJHMjvPzkDzEwSBNei4Ftak7n8gF5Tfn8Dc1cSYQn"
+				// relayma := "/ip4/54.38.47.166/tcp/4001/p2p/QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb"
+				err = ConnectViaRelay(ctx2, relayma, p.ID.String())
+				log.Println(err)
+				cancel2()
 			}
 			if currConfig.IsMobile { break }
 

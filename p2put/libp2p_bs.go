@@ -431,7 +431,8 @@ func (bsres *BootNode) bootDHT(ctx context.Context, bootstrapInfos []peer.AddrIn
 	log.Println("[*] Waiting for DHT routing table to populate...", time.Since(btime))
 	routingDiscovery := routing.NewRoutingDiscovery(kadDHT)
 	testCID := currConfig.HubName // "libp2p-bootstrap-test"
-	discovery.Advertise(ctx, routingDiscovery, testCID) // broadcast self
+	rettl := discovery2.TTL(10*time.Minute) // 3h
+	discovery.Advertise(ctx, routingDiscovery, testCID, rettl) // broadcast self
 
 	if false {
 		pingService := ping.NewPingService(h)
@@ -489,6 +490,8 @@ func (bootres *BootNode) myDiscoveryV3() {
 		// 替代 RefreshRoutingTable()
         // 轻量：只更新自己的路由信息
         bootres.DHT.FindPeer(ctx2, bootres.PeerID)
+		// bootres.DHT.Provide(context.Background(), currConfig.HubName, true)
+
         // 或
         // bootres.DHT.GetClosestPeers(ctx, bootres.PeerID.String())
 		cancel2()

@@ -193,10 +193,12 @@ func mainLibp2p(cfg Config) {
 	currConfig = cfg
 	currConfig.fset = nil
 
+	// bootres = &BootNode{} // temp
 	res, err := Bootstrap(context.Background(), currConfig)
 	if err != nil {
 		panic(err)
 	}
+	// res.Addrs = bootres.Addrs
 
 	myDumpBoot(res.Host, res.DHT)
 	bootres = res
@@ -414,6 +416,7 @@ func Bootstrap(ctx context.Context, cfg Config) (*BootNode, error) {
 	return bsres, nil
 }
 
+// only !IsMobile
 func (bsres *BootNode) bootDHT(ctx context.Context, bootstrapInfos []peer.AddrInfo) (any, error) {
 	h := bsres.Host
 
@@ -425,9 +428,9 @@ func (bsres *BootNode) bootDHT(ctx context.Context, bootstrapInfos []peer.AddrIn
 	kadDHT, err := dht.New(bootCtx, h,
 		dht.Mode(dht.ModeClient),
 		dht.BootstrapPeers(bootstrapInfos...),
-		// dht.DisableAutoRefresh(),
-		dht.Concurrency(1),                   // ← 并发从 10 降到 3
-		dht.RoutingTableRefreshPeriod(15 * time.Minute),  // ← 再加这行, 默认10min
+		dht.DisableAutoRefresh(),
+		dht.Concurrency(3),                   // ← 并发从 10 降到 3
+		dht.RoutingTableRefreshPeriod(5 * time.Minute),  // ← 再加这行, 默认10min
 	)
 	if err != nil {
 		return nil, fmt.Errorf("create DHT: %w", err)
@@ -686,10 +689,11 @@ func myEventSuber(h host.Host, evts ...any) {
 					seen[key] = struct{}{}
 					addrs = append(addrs, ua.Address)
 				}
-				if len(addrs)>=3 || len(bootres.Addrs)==0 {
+				if bootres != nil &&
+					(len(addrs)>=3 || len(bootres.Addrs)==0) {
 					bootres.Addrs = addrs
 				}
-				log.Println("collected addrs", len(bootres.Addrs))
+				log.Println("collected addrs", len(addrs))
 				if e.SignedPeerRecord != nil {
 					pr := &peer.PeerRecord{}
 					if err := e.SignedPeerRecord.TypedRecord(pr); err == nil {

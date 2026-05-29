@@ -327,6 +327,9 @@ func doStream(ctx context.Context, pid peer.ID, label string) error {
 	if err != nil {
 		return err
 	}
+	if sc, ok := s.(interface{ CloseWrite() error }); ok {
+		sc.CloseWrite()
+	}
 	buf, err := io.ReadAll(s)
 	if err != nil {
 		return err

@@ -289,6 +289,7 @@ func Bootstrap(ctx context.Context, cfg Config) (*BootNode, error) {
 	var manualRelays = []string{
 		"/ip4/104.131.131.82/tcp/4001/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",
 		"/ip4/65.109.60.254/tcp/4001/p2p/12D3KooWL96RJHMjvPzkDzEwSBNei4Ftak7n8gF5Tfn8Dc1cSYQn",
+		"/ip4/216.128.185.210/tcp/4001/p2p/12D3KooWLd7aTPQJBEh81qDUwijhKLqJs4T3xSd3zzyC9ZZ7gUNh",
 	}
 
 	staticRelays := parseStringAddrs(manualRelays)

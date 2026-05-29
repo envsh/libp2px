@@ -38,6 +38,7 @@ import (
 	"github.com/libp2p/go-libp2p/p2p/transport/tcp"
 	"github.com/libp2p/go-libp2p/p2p/transport/websocket"
 	discovery "github.com/libp2p/go-libp2p/p2p/discovery/util"
+	"github.com/libp2p/go-libp2p/p2p/net/connmgr"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p-pubsub"
 	"github.com/multiformats/go-multiaddr"
@@ -300,7 +301,8 @@ func Bootstrap(ctx context.Context, cfg Config) (*BootNode, error) {
 	)
 	if currConfig.IsMobile {
 		autoRelayOpt = libp2p.EnableAutoRelayWithStaticRelays(
-			dht.GetDefaultBootstrapPeerAddrInfos(),
+			staticRelays,
+			// dht.GetDefaultBootstrapPeerAddrInfos(),
 			autorelay.WithNumRelays(2),
 			autorelay.WithMinCandidates(3),
 			autorelay.WithBootDelay(30*time.Second),
@@ -308,10 +310,21 @@ func Bootstrap(ctx context.Context, cfg Config) (*BootNode, error) {
 	}
 	bwc := metrics.NewBandwidthCounter()
 
+	cm, err := connmgr.NewConnManager(
+		100,
+		200,
+		connmgr.WithGracePeriod(30*time.Second),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create connmgr: %w", err)
+	}
+
+	log.Println("using static relays:", staticRelays)
 	h, err := libp2p.New(
 		libp2p.Identity(libp2pPriv),
 		libp2p.ListenAddrs(listenAddr),
 		libp2p.ResourceManager(myResourceManager()),
+		libp2p.ConnectionManager(cm),
 
 		libp2p.EnableRelay(),
 		autoRelayOpt,
@@ -327,6 +340,10 @@ func Bootstrap(ctx context.Context, cfg Config) (*BootNode, error) {
 	)
 	if err != nil {
 		return nil, fmt.Errorf("create libp2p host: %w", err)
+	}
+
+	for _, r := range staticRelays {
+		h.ConnManager().Protect(r.ID, "relay")
 	}
 
 	myID := h.ID()

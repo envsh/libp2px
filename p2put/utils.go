@@ -170,10 +170,13 @@ func myAddrsFactory(addrs []multiaddr.Multiaddr) []multiaddr.Multiaddr {
 				if p.Code == multiaddr.P_IP4 { ip4 = true }
 				if p.Code == multiaddr.P_TCP { tcp = true }
 			}
-			if ip4 && tcp && !islo {
+			_, _ = ip4, tcp
+			// if ip4 && tcp && !islo {
+			if !islo {
 				out = append(out, a)
 			}
 		}
+		// log.Println(a)
 	}
 	if len(addrs) != len(out) {
 		// log.Println("addrs filter", len(addrs), "=>", len(out))

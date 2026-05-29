@@ -290,13 +290,15 @@ func DiscoveryV6(ctx context.Context) {
 					log.Printf("[discoveryV6] %v connect %s: %v", n, pid.ShortString(), err)
 				} else {
 					log.Printf("[discoveryV6] %v connected %s", n, pid.ShortString())
-					addrs, _ := queryObservedAddr(ctx, bootres.Host, pid)
-					_ = addrs
+					// addrs, _ := queryObservedAddr(ctx, bootres.Host, pid)
+					// _ = addrs
 					pushToConnected(ctx, bootres.Host, pid, bootres.Addrs)
 					for _, s := range targetPeers {
+						_ = s
 						// tryStreamToTarget(ctx, s)
-						tryPingToTarget(ctx, s)
+						// tryPingToTarget(ctx, s)
 					}
+					log.Println("topic peers", len(bootres.PSO.ListPeers("reddit")))
 				}
 				time.Sleep(5 * time.Second)
 			}

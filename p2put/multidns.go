@@ -8,6 +8,7 @@ import (
 
 	madns "github.com/multiformats/go-multiaddr-dns"
 	"github.com/multiformats/go-multiaddr"
+	"github.com/libp2p/go-libp2p/core/peer"
 )
 
 var resolvedBootstrapNodes []string
@@ -56,8 +57,6 @@ func containsAddr(slice []string, addr string) bool {
 	}
 	return false
 }
-
-var allStaticRelays = append(libp2pBootstrap, resolvedBootstrapNodes...)
 
 func resolveDNSAddrFully(ctx context.Context, addrStr string) ([]string, []error) {
 	var resolved []string
@@ -127,6 +126,27 @@ func resolveAllDNSAddrs(ctx context.Context, addrStrs []string) map[string][]str
 	}
 
 	return result
+}
+
+// []string => []peer.AddrInfo
+// use for DHT
+func filterConvertBootstrapInfos(bootaddrs []string) []peer.AddrInfo {
+	bootstrapInfos := make([]peer.AddrInfo, 0, len(bootaddrs))
+	for _, addrStr := range bootaddrs {
+		ma, err := multiaddr.NewMultiaddr(addrStr)
+		if err != nil {
+			fmt.Printf("  ✗ invalid multiaddr: %s\n", addrStr)
+			continue
+		}
+		ai, err := peer.AddrInfoFromP2pAddr(ma)
+		if err != nil {
+			fmt.Printf("  ✗ failed to parse: %s\n", addrStr)
+			continue
+		}
+		bootstrapInfos = append(bootstrapInfos, *ai)
+		fmt.Printf("  ✓ %s → %s\n", ai.ID.ShortString(), ai.Addrs[0])
+	}
+	return bootstrapInfos
 }
 
 func printDNSResolutionResult(resolved map[string][]string) {

@@ -190,7 +190,6 @@ func mainLibp2p(cfg Config) {
 	// resolveAllDNSAddrsInit()
 	loadOrResolveAllDNSAddrs()
 	fmt.Printf("[*] 解析后的额外地址: %d 个\n", len(resolvedBootstrapNodes))
-	fmt.Printf("[*] 总候选地址: %d 个\n", len(allStaticRelays))
 	fmt.Println()
 
 	if len(resolvedBootstrapNodes) > 0 {
@@ -202,8 +201,8 @@ func mainLibp2p(cfg Config) {
 	fmt.Println()
 
 	if cfg.fset.Parsed() {
-		log.Println(cfg.KeyFile)
-		log.Println(cfg.ListenPort)
+		log.Println("KeyFile", cfg.KeyFile)
+		log.Println("ListenPort", cfg.ListenPort)
 	}
 	currConfig = cfg
 	currConfig.fset = nil
@@ -252,27 +251,6 @@ func mainLibp2p(cfg Config) {
 	log.Printf("%#v\n", currConfig)
 	log.Printf("Run node in *%v* mode\n", mode)
 	select {}
-}
-
-// []string => []peer.AddrInfo
-// use for DHT
-func filterConvertBootstrapInfos() []peer.AddrInfo {
-	bootstrapInfos := make([]peer.AddrInfo, 0, len(libp2pBootstrap))
-	for _, addrStr := range libp2pBootstrap {
-		ma, err := multiaddr.NewMultiaddr(addrStr)
-		if err != nil {
-			fmt.Printf("  ✗ invalid multiaddr: %s\n", addrStr)
-			continue
-		}
-		ai, err := peer.AddrInfoFromP2pAddr(ma)
-		if err != nil {
-			fmt.Printf("  ✗ failed to parse: %s\n", addrStr)
-			continue
-		}
-		bootstrapInfos = append(bootstrapInfos, *ai)
-		fmt.Printf("  ✓ %s → %s\n", ai.ID.ShortString(), ai.Addrs[0])
-	}
-	return bootstrapInfos
 }
 
 func Bootstrap(ctx context.Context, cfg Config) (*BootNode, error) {
@@ -366,16 +344,6 @@ func Bootstrap(ctx context.Context, cfg Config) (*BootNode, error) {
 	}
 	fmt.Println()
 
-	fmt.Println("=== Phase 2: Bootstrap Node Resolution ===")
-	fmt.Printf("[*] Resolving %d bootstrap nodes...\n", len(libp2pBootstrap))
-
-	bootstrapInfos := filterConvertBootstrapInfos()
-
-	fmt.Printf("[+] %d bootstrap peers ready\n\n", len(bootstrapInfos))
-	if len(bootstrapInfos) == 0 {
-		return nil, fmt.Errorf("no valid bootstrap nodes")
-	}
-
 	// dht
 	bsres := &BootNode {
 		Host:      h,
@@ -388,7 +356,7 @@ func Bootstrap(ctx context.Context, cfg Config) (*BootNode, error) {
 		// Discovery: routingDiscovery,
 	}
 	if !currConfig.IsMobile {
-		bsres.bootDHT(ctx, bootstrapInfos)
+		bsres.bootDHT(ctx)
 	}
 
 	fmt.Println("=== Phase 4: Go Online ===")
@@ -433,8 +401,19 @@ func Bootstrap(ctx context.Context, cfg Config) (*BootNode, error) {
 }
 
 // only !IsMobile
-func (bsres *BootNode) bootDHT(ctx context.Context, bootstrapInfos []peer.AddrInfo) (any, error) {
+func (bsres *BootNode) bootDHT(ctx context.Context) (any, error) {
 	h := bsres.Host
+
+	bootaddrs := libp2pBootstrap
+	if true {
+		bootaddrs = resolvedBootstrapNodes
+	}
+	bootstrapInfos := filterConvertBootstrapInfos(bootaddrs)
+
+	fmt.Printf("[+] %d bootstrap peers ready\n\n", len(bootaddrs))
+	if len(bootstrapInfos) == 0 {
+		return nil, fmt.Errorf("no valid bootstrap nodes")
+	}
 
 	fmt.Println("=== Phase 3: DHT Bootstrap ===")
 	fmt.Println("[*] Starting Kademlia DHT in client mode...")
@@ -444,7 +423,7 @@ func (bsres *BootNode) bootDHT(ctx context.Context, bootstrapInfos []peer.AddrIn
 	kadDHT, err := dht.New(bootCtx, h,
 		dht.Mode(dht.ModeClient),
 		dht.BootstrapPeers(bootstrapInfos...),
-		dht.DisableAutoRefresh(),
+		// dht.DisableAutoRefresh(),
 		dht.Concurrency(3),                   // ← 并发从 10 降到 3
 		dht.RoutingTableRefreshPeriod(5 * time.Minute),  // ← 再加这行, 默认10min
 	)
@@ -454,12 +433,13 @@ func (bsres *BootNode) bootDHT(ctx context.Context, bootstrapInfos []peer.AddrIn
 
 	if err := kadDHT.Bootstrap(bootCtx); err != nil {
 		fmt.Printf("  [!] DHT bootstrap warning: %v\n", err)
+		return nil, err
 	}
 	errch := kadDHT.RefreshRoutingTable()
 	btime := time.Now()
 	<- errch
 
-	log.Println("[*] Waiting for DHT routing table to populate...", time.Since(btime))
+	log.Println("[*] Waiting DHT routing table online...", time.Since(btime))
 	routingDiscovery := routing.NewRoutingDiscovery(kadDHT)
 	testCID := currConfig.HubName // "libp2p-bootstrap-test"
 	rettl := discovery2.TTL(10*time.Minute) // 3h

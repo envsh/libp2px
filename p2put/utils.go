@@ -120,10 +120,6 @@ func collectListeningAddrs(h host.Host) []Libp2pAddrInfo {
 	return addrs
 }
 
-func parseStaticRelays() []peer.AddrInfo {
-	return parseStringAddrs(allStaticRelays)
-}
-
 func parseStringAddrs(addrs []string) []peer.AddrInfo {
 	var relays []peer.AddrInfo
 	for _, addrStr := range addrs {
@@ -285,7 +281,9 @@ func IsGoodPeerAddr(ai peer.AddrInfo) bool {
 		if isRelayAddr(a) {
 			continue
 		}
+
 		s := a.String()
+		if strings.Contains(s, ":") { continue } // ipv6
 		if !strings.Contains(s, "/tcp/4001") && !strings.Contains(s, "/tcp/443") {
 			continue
 		}

@@ -204,6 +204,7 @@ func mainLibp2p(cfg Config) {
 	NewPeerGossip(res.Host, res.PSO, res.PeerDB).Start(context.Background())
 	go AdvertiseHTTP(context.Background())
 	go discoveryV4(context.Background())
+	go DiscoveryV6(context.Background())
 	replayProtocols()
 
 	loadPeerstore(res.Host, peerstorePath)

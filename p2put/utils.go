@@ -269,3 +269,28 @@ func ConnectViaRelay(ctx context.Context, relayMa, targetPeerID string) error {
 	log.Printf("[relay] connected to %s via %s", targetPeerID, relayInfo.ID.ShortString())
 	return nil
 }
+
+func IsGoodPeerAddr(ai peer.AddrInfo) bool {
+	if isBootstrapPeer(ai.ID) {
+		return false
+	}
+	for _, a := range ai.Addrs {
+		if isRelayAddr(a) {
+			continue
+		}
+		s := a.String()
+		if !strings.Contains(s, "/tcp/4001") && !strings.Contains(s, "/tcp/443") {
+			continue
+		}
+		if ipStr, err := a.ValueForProtocol(multiaddr.P_IP4); err == nil {
+			if !isPrivateIP(net.ParseIP(ipStr)) {
+				return true
+			}
+		} else if ipStr, err := a.ValueForProtocol(multiaddr.P_IP6); err == nil {
+			if !isPrivateIP(net.ParseIP(ipStr)) {
+				return true
+			}
+		}
+	}
+	return false
+}

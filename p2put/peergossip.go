@@ -82,6 +82,7 @@ func (g *PeerGossip) subLoop(ctx context.Context) {
 		if pid == g.host.ID() {
 			continue
 		}
+		log.Println("got", msg)
 		var addrs []multiaddr.Multiaddr
 		for _, s := range a.Addrs {
 			m, err := multiaddr.NewMultiaddr(s)

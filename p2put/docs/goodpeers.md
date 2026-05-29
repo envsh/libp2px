@@ -13,7 +13,7 @@ non default bootstrap but good
 08:28:57 libp2p_bs.go:646: << {Peer:12D3KooWLd7aTPQJBEh81qDUwijhKLqJs4T3xSd3zzyC9ZZ7gUNh Connectedness:Connected}
 08:28:57 libp2p_bs.go:656: [goodpeer] connected: <peer.ID 12*Z7gUNh> addr=/ip4/216.128.185.210/tcp/4001
 08:28:57 libp2p_bs.go:646: << {Peer:12D3KooWGRFDB7Ho8vNQ21tDRHk2HmJx319XEuMMwvh3CkhQALDF Connectedness:Connected}
-08:28:57 libp2p_bs.go:656: [goodpeer] connected: <peer.ID 12*hQALDF> addr=/ip4/157.90.32.77/tcp/4001
+[goodpeer] connected: addr=/ip4/157.90.32.77/tcp/4001/p2p/12D3KooWGRFDB7Ho8vNQ21tDRHk2HmJx319XEuMMwvh3CkhQALDF
 08:28:58 libp2p_bs.go:646: << {Peer:12D3KooWCCd6dU3XZJZ4A8R7hWd9PQCdmTJhMLuVNLYkvMb8xCqx Connectedness:Connected}
 08:28:58 libp2p_bs.go:656: [goodpeer] connected: <peer.ID 12*b8xCqx> addr=/ip4/70.34.217.160/tcp/4001
 09:10:59 libp2p_bs.go:652: << {Peer:12D3KooWMQcA3wszd9aM57YdcR6SnXCFo31iQd69hurdQBnmNGde Connectedness:Connected}

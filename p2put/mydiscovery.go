@@ -213,12 +213,16 @@ type dhtPeersResponse struct {
 }
 
 func DiscoveryV6(ctx context.Context) {
-	ticker := time.NewTicker(discoverInterval)
-	defer ticker.Stop()
+	interval := discoverInterval
 
-	for {
+	for i := 0; ; i++ {
+		if i == 0 {
+			interval = discoverInterval/2
+		} else {
+			interval = discoverInterval
+		}
 		select {
-		case <-ticker.C:
+		case <- time.After(interval):
 			if bootres == nil || bootres.Host == nil {
 				continue
 			}
@@ -302,9 +306,10 @@ func DiscoveryV6(ctx context.Context) {
 						tryStreamToTarget(ctx, s)
 					}
 				}
-				time.Sleep(3 * time.Second)
+				time.Sleep(5 * time.Second)
 			}
 
+			time.Sleep(discoverInterval/2)
 		case <-ctx.Done():
 			return
 		}

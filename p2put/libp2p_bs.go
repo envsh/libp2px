@@ -287,9 +287,14 @@ func Bootstrap(ctx context.Context, cfg Config) (*BootNode, error) {
 	}
 
 	var manualRelays = []string{
-		"/ip4/104.131.131.82/tcp/4001/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",
+		// "/ip4/104.131.131.82/tcp/4001/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",
+		"/ip4/83.147.246.108/tcp/4001/p2p/12D3KooWSXP8vGvbTaUTUGxncjgCEAeoPQnTHcBLgWRtms1sm3eQ",
+		"/ip4/107.191.52.146/tcp/4001/p2p/12D3KooWETqQmVb6uV9QPTTFSN6bgNoNG2smAanpeNqnwscXoiSw",
 		"/ip4/65.109.60.254/tcp/4001/p2p/12D3KooWL96RJHMjvPzkDzEwSBNei4Ftak7n8gF5Tfn8Dc1cSYQn",
-		"/ip4/216.128.185.210/tcp/4001/p2p/12D3KooWLd7aTPQJBEh81qDUwijhKLqJs4T3xSd3zzyC9ZZ7gUNh",
+		"/ip4/157.90.32.77/tcp/4001/p2p/12D3KooWGRFDB7Ho8vNQ21tDRHk2HmJx319XEuMMwvh3CkhQALDF",
+		// "/ip4/216.128.185.210/tcp/4001/p2p/12D3KooWLd7aTPQJBEh81qDUwijhKLqJs4T3xSd3zzyC9ZZ7gUNh",
+		"/ip4/70.34.217.160/tcp/4001/p2p/12D3KooWCCd6dU3XZJZ4A8R7hWd9PQCdmTJhMLuVNLYkvMb8xCqx",
+		"/ip4/93.95.229.144/tcp/4001/p2p/12D3KooWEqtbfoacAdiszAdL8vGYSbhADXcXLKv2wyY34iPwykjv",
 	}
 
 	staticRelays := parseStringAddrs(manualRelays)
@@ -860,6 +865,26 @@ func cleanPeerstore() {
 }
 
 func watchStaticRelays(ctx context.Context, h host.Host, relays []peer.AddrInfo) {
+	go func() {
+		pingTicker := time.NewTicker(30 * time.Second)
+		defer pingTicker.Stop()
+		for {
+			select {
+			case <-pingTicker.C:
+				for _, r := range relays {
+					if h.Network().Connectedness(r.ID) != network.Connected {
+						continue
+					}
+					pctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+					<-ping.Ping(pctx, h, r.ID)
+					cancel()
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
 	ticker := time.NewTicker(60 * time.Second)
 	defer ticker.Stop()
 	for {

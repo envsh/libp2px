@@ -77,6 +77,8 @@ const (
 	p2pServiceNode    = 1
 	p2pServiceChat    = 1 << 24
 
+	IpfsPingProtocl = "/ipfs/ping/1.0.0"
+	IpfsIdProtocol = "/ipfs/id/1.0.0"
 	RelayHopProtocol  = protocol.ID("/libp2p/circuit/relay/0.2.0/hop")
 	RelayStopProtocol = protocol.ID("/libp2p/circuit/relay/0.2.0/stop")
 
@@ -97,6 +99,17 @@ var libp2pBootstrap = []string{
 	"/dnsaddr/bootstrap.libp2p.io/p2p/QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb",
 	"/dnsaddr/bootstrap.libp2p.io/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt",
 	"/ip4/104.131.131.82/tcp/4001/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",
+}
+
+var manualRelays = []string{
+	// "/ip4/104.131.131.82/tcp/4001/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",
+	"/ip4/83.147.246.108/tcp/4001/p2p/12D3KooWSXP8vGvbTaUTUGxncjgCEAeoPQnTHcBLgWRtms1sm3eQ",
+	"/ip4/107.191.52.146/tcp/4001/p2p/12D3KooWETqQmVb6uV9QPTTFSN6bgNoNG2smAanpeNqnwscXoiSw",
+	"/ip4/65.109.60.254/tcp/4001/p2p/12D3KooWL96RJHMjvPzkDzEwSBNei4Ftak7n8gF5Tfn8Dc1cSYQn",
+	"/ip4/157.90.32.77/tcp/4001/p2p/12D3KooWGRFDB7Ho8vNQ21tDRHk2HmJx319XEuMMwvh3CkhQALDF",
+	// "/ip4/216.128.185.210/tcp/4001/p2p/12D3KooWLd7aTPQJBEh81qDUwijhKLqJs4T3xSd3zzyC9ZZ7gUNh",
+	"/ip4/70.34.217.160/tcp/4001/p2p/12D3KooWCCd6dU3XZJZ4A8R7hWd9PQCdmTJhMLuVNLYkvMb8xCqx",
+	"/ip4/93.95.229.144/tcp/4001/p2p/12D3KooWEqtbfoacAdiszAdL8vGYSbhADXcXLKv2wyY34iPwykjv",
 }
 
 var peerstorePath = "/tmp/libp2p_peerstore.json"
@@ -140,8 +153,8 @@ func loadOrResolveAllDNSAddrs() {
 							strings.Contains(addr, "/udp/") {
 							continue
 						}
-						if !containsAddr(extraStaticRelays, addr) {
-							extraStaticRelays = append(extraStaticRelays, addr)
+						if !containsAddr(resolvedBootstrapNodes, addr) {
+							resolvedBootstrapNodes = append(resolvedBootstrapNodes, addr)
 						}
 					}
 				}
@@ -164,8 +177,8 @@ func loadOrResolveAllDNSAddrs() {
 				strings.Contains(addr, "/udp/") {
 				continue
 			}
-			if !containsAddr(extraStaticRelays, addr) {
-				extraStaticRelays = append(extraStaticRelays, addr)
+			if !containsAddr(resolvedBootstrapNodes, addr) {
+				resolvedBootstrapNodes = append(resolvedBootstrapNodes, addr)
 			}
 		}
 	}
@@ -176,13 +189,13 @@ func mainLibp2p(cfg Config) {
 	fmt.Printf("[*] 原始 bootstrap 地址: %d 个\n", len(libp2pBootstrap))
 	// resolveAllDNSAddrsInit()
 	loadOrResolveAllDNSAddrs()
-	fmt.Printf("[*] 解析后的额外地址: %d 个\n", len(extraStaticRelays))
+	fmt.Printf("[*] 解析后的额外地址: %d 个\n", len(resolvedBootstrapNodes))
 	fmt.Printf("[*] 总候选地址: %d 个\n", len(allStaticRelays))
 	fmt.Println()
 
-	if len(extraStaticRelays) > 0 {
+	if len(resolvedBootstrapNodes) > 0 {
 		fmt.Println("[*] 解析后的地址列表:")
-		for i, addr := range extraStaticRelays {
+		for i, addr := range resolvedBootstrapNodes {
 			fmt.Printf("  [%02d] %s\n", i+1, addr)
 		}
 	}
@@ -195,25 +208,31 @@ func mainLibp2p(cfg Config) {
 	currConfig = cfg
 	currConfig.fset = nil
 
-	// bootres = &BootNode{} // temp
 	res, err := Bootstrap(context.Background(), currConfig)
 	if err != nil {
 		panic(err)
 	}
-	// res.Addrs = bootres.Addrs
 
 	myDumpBoot(res.Host, res.DHT)
 	bootres = res
+	loadPeerstore(res.Host, peerstorePath)
+	replayProtocols()
+
 	res.PeerDB = NewPeerDB(30 * time.Minute)
 	NewPeerGossip(res.Host, res.PSO, res.PeerDB, currConfig.HubName).Start(context.Background())
 	if currConfig.IsMobile {
 		go AdvertiseHTTP(context.Background())
 		go discoveryV4(context.Background())
 		go DiscoveryV6(context.Background())
+	} else {
+		go res.myDiscoveryV3()
+		//go myDiscoveryV2()
 	}
-	replayProtocols()
 
-	loadPeerstore(res.Host, peerstorePath)
+	for _, topic := range currConfig.Topics {
+		if len(topic) <= 0 { continue }
+		getOrSubscribeTopic(topic)
+	}
 
 	go func() {
 		ticker := time.NewTicker(5 * time.Minute)
@@ -225,16 +244,6 @@ func mainLibp2p(cfg Config) {
 			cleanPeerstore()
 		}
 	}()
-
-	if !currConfig.IsMobile {
-		go res.myDiscoveryV3()
-		//go myDiscoveryV2()
-	}
-
-	for _, topic := range currConfig.Topics {
-		if len(topic) <= 0 { continue }
-		getOrSubscribeTopic(topic)
-	}
 
 	mode := "Server"
 	if currConfig.IsMobile {
@@ -284,17 +293,6 @@ func Bootstrap(ctx context.Context, cfg Config) (*BootNode, error) {
 	libp2pPriv, err := crypto.UnmarshalEd25519PrivateKey(edPriv)
 	if err != nil {
 		return nil, fmt.Errorf("unmarshal privkey: %w", err)
-	}
-
-	var manualRelays = []string{
-		// "/ip4/104.131.131.82/tcp/4001/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",
-		"/ip4/83.147.246.108/tcp/4001/p2p/12D3KooWSXP8vGvbTaUTUGxncjgCEAeoPQnTHcBLgWRtms1sm3eQ",
-		"/ip4/107.191.52.146/tcp/4001/p2p/12D3KooWETqQmVb6uV9QPTTFSN6bgNoNG2smAanpeNqnwscXoiSw",
-		"/ip4/65.109.60.254/tcp/4001/p2p/12D3KooWL96RJHMjvPzkDzEwSBNei4Ftak7n8gF5Tfn8Dc1cSYQn",
-		"/ip4/157.90.32.77/tcp/4001/p2p/12D3KooWGRFDB7Ho8vNQ21tDRHk2HmJx319XEuMMwvh3CkhQALDF",
-		// "/ip4/216.128.185.210/tcp/4001/p2p/12D3KooWLd7aTPQJBEh81qDUwijhKLqJs4T3xSd3zzyC9ZZ7gUNh",
-		"/ip4/70.34.217.160/tcp/4001/p2p/12D3KooWCCd6dU3XZJZ4A8R7hWd9PQCdmTJhMLuVNLYkvMb8xCqx",
-		"/ip4/93.95.229.144/tcp/4001/p2p/12D3KooWEqtbfoacAdiszAdL8vGYSbhADXcXLKv2wyY34iPwykjv",
 	}
 
 	staticRelays := parseStringAddrs(manualRelays)
@@ -376,19 +374,6 @@ func Bootstrap(ctx context.Context, cfg Config) (*BootNode, error) {
 	fmt.Printf("[+] %d bootstrap peers ready\n\n", len(bootstrapInfos))
 	if len(bootstrapInfos) == 0 {
 		return nil, fmt.Errorf("no valid bootstrap nodes")
-	}
-
-	// useless
-	for i, v := range extraStaticRelays {
-		if true { break }
-		log.Println(i, v)
-		btime := time.Now()
-		addr, err := peer.AddrInfoFromString(v)
-		if err != nil {}
-		err = h.Connect(ctx, *addr)
-		if err != nil {
-			log.Println(err, time.Since(btime))
-		}
 	}
 
 	// dht

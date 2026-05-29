@@ -217,7 +217,7 @@ func DiscoveryV6(ctx context.Context) {
 
 	for i := 0; ; i++ {
 		if i == 0 {
-			interval = discoverInterval/2
+			interval = discoverInterval/3
 		} else {
 			interval = discoverInterval
 		}
@@ -255,7 +255,8 @@ func DiscoveryV6(ctx context.Context) {
 			resp.Body.Close()
 
 			myID := bootres.Host.ID()
-			for _, p := range result.Peers {
+			for n, p := range result.Peers {
+				if n%3==1 { time.Sleep(1*time.Second); continue }
 				pid, err := peer.Decode(p.ID)
 				if err != nil {
 					continue
@@ -285,23 +286,12 @@ func DiscoveryV6(ctx context.Context) {
 					continue
 				}
 				if err := bootres.Host.Connect(ctx, info); err != nil {
-					log.Printf("[discoveryV6] connect %s: %v", pid.ShortString(), err)
+					log.Printf("[discoveryV6] %v connect %s: %v", n, pid.ShortString(), err)
 				} else {
-					log.Printf("[discoveryV6] connected %s", pid.ShortString())
+					log.Printf("[discoveryV6] %v connected %s", n, pid.ShortString())
 					addrs, _ := queryObservedAddr(ctx, bootres.Host, pid)
 					_ = addrs
 					pushToConnected(ctx, bootres.Host, pid, bootres.Addrs)
-					// for _, s := range targetPeers {
-					// 	tid, _ := peer.Decode(s)
-					// 	closer, err := rawFindNode(ctx, bootres.Host, tid, pid)
-					// 	if err != nil {
-					// 		log.Printf("[discoveryV6] rawFindNode %s ← %s: %v",
-					// 			tid.ShortString(), pid.ShortString(), err)
-					// 	} else {
-					// 		log.Printf("[discoveryV6] rawFindNode %s ← %s: %d results",
-					// 			tid.ShortString(), pid.ShortString(), len(closer))
-					// 	}
-					// }
 					for _, s := range targetPeers {
 						tryStreamToTarget(ctx, s)
 					}

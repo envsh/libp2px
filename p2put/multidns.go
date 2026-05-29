@@ -10,7 +10,7 @@ import (
 	"github.com/multiformats/go-multiaddr"
 )
 
-var extraStaticRelays []string
+var resolvedBootstrapNodes []string
 
 func resolveAllDNSAddrsInit() {
 	fmt.Println("=== [init] DNSADDR 预解析 ===")
@@ -25,13 +25,13 @@ func resolveAllDNSAddrsInit() {
 				strings.Contains(addr, "/udp/") {
 				continue
 			}
-			if !containsAddr(extraStaticRelays, addr) {
-				extraStaticRelays = append(extraStaticRelays, addr)
+			if !containsAddr(resolvedBootstrapNodes, addr) {
+				resolvedBootstrapNodes = append(resolvedBootstrapNodes, addr)
 			}
 		}
 	}
 
-	fmt.Printf("[*] 预解析完成，添加了 %d 个解析后的地址, %v\n", len(extraStaticRelays), time.Since(btime))
+	fmt.Printf("[*] 预解析完成，添加了 %d 个解析后的地址, %v\n", len(resolvedBootstrapNodes), time.Since(btime))
 	fmt.Println()
 }
 
@@ -57,7 +57,7 @@ func containsAddr(slice []string, addr string) bool {
 	return false
 }
 
-var allStaticRelays = append(libp2pBootstrap, extraStaticRelays...)
+var allStaticRelays = append(libp2pBootstrap, resolvedBootstrapNodes...)
 
 func resolveDNSAddrFully(ctx context.Context, addrStr string) ([]string, []error) {
 	var resolved []string

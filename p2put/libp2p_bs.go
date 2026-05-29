@@ -33,6 +33,7 @@ import (
 	discovery2 "github.com/libp2p/go-libp2p/core/discovery"
 	"github.com/libp2p/go-libp2p/p2p/discovery/routing"
 	"github.com/libp2p/go-libp2p/p2p/host/autorelay"
+	"github.com/libp2p/go-libp2p/p2p/protocol/circuitv2/client"
 	"github.com/libp2p/go-libp2p/core/metrics"
 	"github.com/libp2p/go-libp2p/p2p/protocol/ping"
 	"github.com/libp2p/go-libp2p/p2p/transport/tcp"
@@ -285,7 +286,13 @@ func Bootstrap(ctx context.Context, cfg Config) (*BootNode, error) {
 		return nil, fmt.Errorf("unmarshal privkey: %w", err)
 	}
 
-	staticRelays := parseStaticRelays()
+	var manualRelays = []string{
+		"/ip4/104.131.131.82/tcp/4001/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",
+		"/ip4/65.109.60.254/tcp/4001/p2p/12D3KooWL96RJHMjvPzkDzEwSBNei4Ftak7n8gF5Tfn8Dc1cSYQn",
+	}
+
+	staticRelays := parseStringAddrs(manualRelays)
+	// staticRelays := parseStaticRelays()
 	fmt.Printf("[+] Parsed %d static relay candidates\n", len(staticRelays))
 
 	listenAddr, _ := multiaddr.NewMultiaddr(fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", cfg.ListenPort))
@@ -345,6 +352,7 @@ func Bootstrap(ctx context.Context, cfg Config) (*BootNode, error) {
 	for _, r := range staticRelays {
 		h.ConnManager().Protect(r.ID, "relay")
 	}
+	go watchStaticRelays(context.Background(), h, staticRelays)
 
 	myID := h.ID()
 	fmt.Printf("[+] Host created, Peer ID: %s\n", myID.String())
@@ -706,9 +714,8 @@ func myEventSuber(h host.Host, evts ...any) {
 					seen[key] = struct{}{}
 					addrs = append(addrs, ua.Address)
 				}
-				if bootres != nil &&
-					(len(addrs)>=3 || len(bootres.Addrs)==0) {
-					bootres.Addrs = addrs
+				if bootres != nil {
+					bootres.Addrs = mergeAddrs(bootres.Addrs, addrs)
 				}
 				log.Println("collected addrs", len(addrs))
 				if e.SignedPeerRecord != nil {
@@ -849,4 +856,59 @@ func cleanPeerstore() {
 			ps.RemovePeer(pid)
 		}
 	}
+}
+
+func watchStaticRelays(ctx context.Context, h host.Host, relays []peer.AddrInfo) {
+	ticker := time.NewTicker(60 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			for _, r := range relays {
+				if h.Network().Connectedness(r.ID) != network.Connected {
+					log.Printf("[relay] re-reserving %s", r.ID.ShortString())
+					cctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+					res, err := client.Reserve(cctx, h, r)
+					cancel()
+					if err != nil {
+						if strings.Contains(err.Error(), "RESERVATION_REFUSED") {
+							log.Printf("[relay] %s does NOT support relay, will skip", r.ID.ShortString())
+						} else {
+							log.Printf("[relay] reserve %s: %v", r.ID.ShortString(), err)
+						}
+					} else {
+						log.Printf("[relay] reserved from %s, expires %s, addrs: %v",
+							r.ID.ShortString(), res.Expiration.Format(time.TimeOnly), res.Addrs)
+						if bootres != nil {
+							bootres.Addrs = mergeAddrs(bootres.Addrs, res.Addrs)
+						}
+					}
+				}
+			}
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+func mergeAddrs(existing, incoming []multiaddr.Multiaddr) []multiaddr.Multiaddr {
+	seen := make(map[string]struct{}, len(existing)+len(incoming))
+	out := make([]multiaddr.Multiaddr, 0, len(existing)+len(incoming))
+	for _, a := range existing {
+		key := a.String()
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, a)
+	}
+	for _, a := range incoming {
+		key := a.String()
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, a)
+	}
+	return out
 }

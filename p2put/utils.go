@@ -121,8 +121,12 @@ func collectListeningAddrs(h host.Host) []Libp2pAddrInfo {
 }
 
 func parseStaticRelays() []peer.AddrInfo {
+	return parseStringAddrs(allStaticRelays)
+}
+
+func parseStringAddrs(addrs []string) []peer.AddrInfo {
 	var relays []peer.AddrInfo
-	for _, addrStr := range allStaticRelays {
+	for _, addrStr := range addrs {
 		ma, err := multiaddr.NewMultiaddr(addrStr)
 		if err != nil {
 			continue

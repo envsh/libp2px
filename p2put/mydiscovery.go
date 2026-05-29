@@ -14,6 +14,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/p2p/protocol/ping"
 	dht_pb "github.com/libp2p/go-libp2p-kad-dht/pb"
 	"github.com/libp2p/go-msgio/protoio"
 	"github.com/multiformats/go-multiaddr"
@@ -293,7 +294,8 @@ func DiscoveryV6(ctx context.Context) {
 					_ = addrs
 					pushToConnected(ctx, bootres.Host, pid, bootres.Addrs)
 					for _, s := range targetPeers {
-						tryStreamToTarget(ctx, s)
+						// tryStreamToTarget(ctx, s)
+						tryPingToTarget(ctx, s)
 					}
 				}
 				time.Sleep(5 * time.Second)
@@ -306,31 +308,21 @@ func DiscoveryV6(ctx context.Context) {
 	}
 }
 
-func tryStreamToTarget(ctx context.Context, targetID string) {
+func tryStreamToTarget(ctx context.Context, targetID string) error {
 	pid, err := peer.Decode(targetID)
 	if err != nil {
-		log.Printf("[discoveryV6] decode target: %v", err)
-		return
+		return fmt.Errorf("decode target: %w", err)
 	}
 	label := pid.ShortString()
 
 	err = doStream(ctx, pid, label)
 	if err == nil {
-		return
+		return nil
 	}
 	if strings.Contains(err.Error(), "no address") {
-		// log.Printf("[discoveryV6] lookup %s on HTTP", label)
-		// addrs := lookupPeerOnHTTP(targetID)
-		// if len(addrs) > 0 {
-		// 	bootres.Host.Peerstore().AddAddrs(pid, addrs, 10*time.Minute)
-		// 	err = doStream(ctx, pid, label)
-		// 	if err == nil {
-		// 		return
-		// 	}
-		// 	time.Sleep(3 * time.Second)
-		// }
 	}
 	log.Printf("[discoveryV6] newstream %s: %v", label, err)
+	return err
 }
 
 func doStream(ctx context.Context, pid peer.ID, label string) error {
@@ -354,6 +346,26 @@ func doStream(ctx context.Context, pid peer.ID, label string) error {
 		return err
 	}
 	log.Printf("[discoveryV6] reply: %s", string(buf))
+	return nil
+}
+
+func tryPingToTarget(ctx context.Context, targetID string) error {
+	pid, err := peer.Decode(targetID)
+	if err != nil {
+		return fmt.Errorf("decode target: %w", err)
+	}
+	label := pid.ShortString()
+
+	res := <-ping.Ping(ctx, bootres.Host, pid)
+	errmsg := "OK"
+	if res.Error != nil {
+		arr := strings.Split(res.Error.Error(), ": ")
+		errmsg = arr[len(arr)-1]
+	}
+	log.Printf("[discoveryV6] ping %s RTT: %s, err: %v", label, res.RTT, errmsg)
+	if res.Error != nil {
+		return fmt.Errorf("ping %s: %w", label, res.Error)
+	}
 	return nil
 }
 

@@ -32,6 +32,7 @@ type PeerGossip struct {
 	topicName string
 
 	seq   uint64
+	// 存储 []multiaddr.Multiaddr，当前知晓的本机地址列表，由 onEvent 更新，供 publish 使用
 	addrs atomic.Value
 }
 
@@ -83,7 +84,11 @@ func (g *PeerGossip) subLoop(ctx context.Context) {
 		if pid == g.host.ID() {
 			continue
 		}
-		log.Println("got", msg)
+		fromPeerID, _ := peer.IDFromBytes(msg.From)
+		if fromPeerID == g.host.ID() {
+			continue
+		}
+		log.Printf("[gossip] %v=%v got from %s data.len=%d data:%s", g.topicName, len(g.ps.ListPeers(g.topicName)), fromPeerID.ShortString(), len(msg.Data), string(msg.Data))
 		var addrs []multiaddr.Multiaddr
 		for _, s := range a.Addrs {
 			m, err := multiaddr.NewMultiaddr(s)
@@ -91,6 +96,12 @@ func (g *PeerGossip) subLoop(ctx context.Context) {
 				continue
 			}
 			addrs = append(addrs, m)
+		}
+		if rec, ok := g.db.Get(pid); ok {
+			added, removed := addrListDiff(rec.Addrs, addrs)
+			if len(added) > 0 || len(removed) > 0 {
+				log.Printf("[gossip] peer %s addrs changed: +%d -%d", pid.ShortString(), len(added), len(removed))
+			}
 		}
 		g.db.Update(pid, addrs)
 	}
@@ -131,6 +142,24 @@ func (g *PeerGossip) publish(ctx context.Context) {
 	}
 	data, _ := json.Marshal(a)
 	g.topic.Publish(ctx, data)
+}
+
+func addrListDiff(oldAddrs, newAddrs []multiaddr.Multiaddr) (added, removed []string) {
+	oldSet := make(map[string]struct{}, len(oldAddrs))
+	for _, a := range oldAddrs {
+		oldSet[a.String()] = struct{}{}
+	}
+	for _, a := range newAddrs {
+		s := a.String()
+		if _, ok := oldSet[s]; !ok {
+			added = append(added, s)
+		}
+		delete(oldSet, s)
+	}
+	for s := range oldSet {
+		removed = append(removed, s)
+	}
+	return
 }
 
 func (g *PeerGossip) onEvent(raw any) {

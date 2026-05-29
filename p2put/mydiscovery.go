@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -31,11 +32,19 @@ const activeTracker = 2
 const advertiseInterval = 50 * time.Second
 const discoverInterval = 60 * time.Second
 
-var targetPeers = []string{
-	"12D3KooWDVExaeKp1YzYvhS7E6oZDdDnEB3HENS9VrYp3vKME7m1",
-	"12D3KooWSgyQhqayreZ6UequLq3ZGxJm1WG4tyszD29ps8zNtYLT",
-	"12D3KooWHXjoE8cMhPPD7JaUGHHiXCNLHQcbgUQrXFc788oq6ahm",
-	"12D3KooWQH1nRGEwBGBtjSbRDpsStcFuoo22KtrzgnbLH7JZNGfu",
+// target_peers.json 格式：JSON 字符串数组
+// ["12D3KooXXXX...", "12D3KooYYYY..."]
+func loadTargetPeers() []string {
+	data, err := os.ReadFile("target_peers.json")
+	if err != nil {
+		return nil
+	}
+	var peers []string
+	if err := json.Unmarshal(data, &peers); err != nil {
+		log.Printf("[discovery] target_peers.json unmarshal error: %v", err)
+		return nil
+	}
+	return peers
 }
 
 func trackerURL() string { return trackers[activeTracker] }
@@ -293,7 +302,7 @@ func DiscoveryV6(ctx context.Context) {
 					// addrs, _ := queryObservedAddr(ctx, bootres.Host, pid)
 					// _ = addrs
 					pushToConnected(ctx, bootres.Host, pid, bootres.Addrs)
-					for _, s := range targetPeers {
+					for _, s := range loadTargetPeers() {
 						_ = s
 						// tryStreamToTarget(ctx, s)
 						// tryPingToTarget(ctx, s)

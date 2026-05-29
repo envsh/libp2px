@@ -862,11 +862,7 @@ func watchStaticRelays(ctx context.Context, h host.Host, relays []peer.AddrInfo)
 					res, err := client.Reserve(cctx, h, r)
 					cancel()
 					if err != nil {
-						if strings.Contains(err.Error(), "RESERVATION_REFUSED") {
-							log.Printf("[relay] %s does NOT support relay, will skip", r.ID.ShortString())
-						} else {
-							log.Printf("[relay] reserve %s: %v", r.ID.ShortString(), err)
-						}
+						log.Printf("[relay] reserve %s: %v", r.ID.ShortString(), err)
 					} else {
 						log.Printf("[relay] reserved from %s, expires %s, addrs: %v",
 							r.ID.ShortString(), res.Expiration.Format(time.TimeOnly), res.Addrs)

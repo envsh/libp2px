@@ -14,7 +14,6 @@ import (
 	"github.com/multiformats/go-multiaddr"
 )
 
-const gossipTopic = "_p2p-disc"
 const publishInterval = 60 * time.Second
 
 type PeerAnnounce struct {
@@ -25,28 +24,30 @@ type PeerAnnounce struct {
 }
 
 type PeerGossip struct {
-	host  host.Host
-	ps    *pubsub.PubSub
-	topic *pubsub.Topic
-	sub   *pubsub.Subscription
-	db    *PeerDB
+	host      host.Host
+	ps        *pubsub.PubSub
+	topic     *pubsub.Topic
+	sub       *pubsub.Subscription
+	db        *PeerDB
+	topicName string
 
 	seq   uint64
 	addrs atomic.Value
 }
 
-func NewPeerGossip(h host.Host, ps *pubsub.PubSub, db *PeerDB) *PeerGossip {
+func NewPeerGossip(h host.Host, ps *pubsub.PubSub, db *PeerDB, topicName string) *PeerGossip {
 	return &PeerGossip{
-		host: h,
-		ps:   ps,
-		db:   db,
-		seq:  uint64(time.Now().UnixMilli()),
+		host:      h,
+		ps:        ps,
+		db:        db,
+		topicName: topicName,
+		seq:       uint64(time.Now().UnixMilli()),
 	}
 }
 
 func (g *PeerGossip) Start(ctx context.Context) {
 	var err error
-	g.topic, err = g.ps.Join(gossipTopic)
+	g.topic, err = g.ps.Join(g.topicName)
 	if err != nil {
 		log.Printf("[gossip] join topic: %v", err)
 		return
@@ -62,7 +63,7 @@ func (g *PeerGossip) Start(ctx context.Context) {
 	go g.pubLoop(ctx)
 	go g.db.cleanup(ctx)
 
-	log.Printf("[gossip] started on %s", gossipTopic)
+	log.Printf("[gossip] started on %s", g.topicName)
 }
 
 func (g *PeerGossip) subLoop(ctx context.Context) {
@@ -137,8 +138,11 @@ func (g *PeerGossip) onEvent(raw any) {
 	if !ok {
 		return
 	}
-	addrs := make([]multiaddr.Multiaddr, 0, len(e.Current))
+	addrs := make([]multiaddr.Multiaddr, 0, len(e.Current)+len(e.Removed))
 	for _, u := range e.Current {
+		addrs = append(addrs, u.Address)
+	}
+	for _, u := range e.Removed {
 		addrs = append(addrs, u.Address)
 	}
 	g.addrs.Store(addrs)

@@ -203,7 +203,7 @@ func mainLibp2p(cfg Config) {
 	myDumpBoot(res.Host, res.DHT)
 	bootres = res
 	res.PeerDB = NewPeerDB(30 * time.Minute)
-	NewPeerGossip(res.Host, res.PSO, res.PeerDB).Start(context.Background())
+	NewPeerGossip(res.Host, res.PSO, res.PeerDB, currConfig.HubName).Start(context.Background())
 	if currConfig.IsMobile {
 		go AdvertiseHTTP(context.Background())
 		go discoveryV4(context.Background())

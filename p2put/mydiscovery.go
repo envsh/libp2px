@@ -11,8 +11,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
+	dht_pb "github.com/libp2p/go-libp2p-kad-dht/pb"
+	"github.com/libp2p/go-msgio/protoio"
 	"github.com/multiformats/go-multiaddr"
 )
 
@@ -26,6 +29,13 @@ const activeTracker = 2
 
 const advertiseInterval = 50 * time.Second
 const discoverInterval = 60 * time.Second
+
+var targetPeers = []string{
+	"12D3KooWDVExaeKp1YzYvhS7E6oZDdDnEB3HENS9VrYp3vKME7m1",
+	"12D3KooWSgyQhqayreZ6UequLq3ZGxJm1WG4tyszD29ps8zNtYLT",
+	"12D3KooWHXjoE8cMhPPD7JaUGHHiXCNLHQcbgUQrXFc788oq6ahm",
+	"12D3KooWQH1nRGEwBGBtjSbRDpsStcFuoo22KtrzgnbLH7JZNGfu",
+}
 
 func trackerURL() string { return trackers[activeTracker] }
 
@@ -275,10 +285,20 @@ func DiscoveryV6(ctx context.Context) {
 				} else {
 					log.Printf("[discoveryV6] connected %s", pid.ShortString())
 					pushToConnected(ctx, bootres.Host, pid, bootres.Addrs)
-					tryStreamToTarget(ctx, "12D3KooWDVExaeKp1YzYvhS7E6oZDdDnEB3HENS9VrYp3vKME7m1")
-					tryStreamToTarget(ctx, "12D3KooWSgyQhqayreZ6UequLq3ZGxJm1WG4tyszD29ps8zNtYLT")
-					tryStreamToTarget(ctx, "12D3KooWHXjoE8cMhPPD7JaUGHHiXCNLHQcbgUQrXFc788oq6ahm")
-					tryStreamToTarget(ctx, "12D3KooWQH1nRGEwBGBtjSbRDpsStcFuoo22KtrzgnbLH7JZNGfu")
+					// for _, s := range targetPeers {
+					// 	tid, _ := peer.Decode(s)
+					// 	closer, err := rawFindNode(ctx, bootres.Host, tid, pid)
+					// 	if err != nil {
+					// 		log.Printf("[discoveryV6] rawFindNode %s ← %s: %v",
+					// 			tid.ShortString(), pid.ShortString(), err)
+					// 	} else {
+					// 		log.Printf("[discoveryV6] rawFindNode %s ← %s: %d results",
+					// 			tid.ShortString(), pid.ShortString(), len(closer))
+					// 	}
+					// }
+					for _, s := range targetPeers {
+						tryStreamToTarget(ctx, s)
+					}
 				}
 				time.Sleep(3 * time.Second)
 			}
@@ -338,6 +358,60 @@ func doStream(ctx context.Context, pid peer.ID, label string) error {
 	}
 	log.Printf("[discoveryV6] reply: %s", string(buf))
 	return nil
+}
+
+func rawFindNode(ctx context.Context, h host.Host, target peer.ID, queryPeer peer.ID) ([]peer.AddrInfo, error) {
+	s, err := h.NewStream(ctx, queryPeer, "/ipfs/kad/1.0.0")
+	if err != nil {
+		return nil, fmt.Errorf("new stream: %w", err)
+	}
+	defer s.Close()
+
+	req := &dht_pb.Message{
+		Type: dht_pb.Message_FIND_NODE,
+		Key:  []byte(target),
+	}
+
+	wr := protoio.NewDelimitedWriter(s)
+	if err := wr.WriteMsg(req); err != nil {
+		s.Reset()
+		return nil, fmt.Errorf("write: %w", err)
+	}
+
+	rd := protoio.NewDelimitedReader(s, network.MessageSizeMax)
+	var resp dht_pb.Message
+	if err := rd.ReadMsg(&resp); err != nil {
+		return nil, fmt.Errorf("read: %w", err)
+	}
+
+	closer := dht_pb.PBPeersToPeerInfos(resp.GetCloserPeers())
+
+	found := false
+	for _, cp := range closer {
+		if cp == nil { continue }
+		// log.Printf("[rawFindNode] closer: %s addrs=%d",
+			// cp.ID.ShortString(), len(cp.Addrs))
+		if cp.ID == target && len(cp.Addrs) > 0 {
+			found = true
+			//log.Printf("[rawFindNode] target %s FOUND in closer peers, connecting",
+			//	target.ShortString())
+			if h.Network().Connectedness(target) != network.Connected {
+				// h.Connect(ctx, *cp)
+			}
+		}
+	}
+	if !found {
+		log.Printf("[rawFindNode] target %s NOT in closer peers",
+			target.ShortString())
+	}
+
+	out := make([]peer.AddrInfo, len(closer))
+	for i, p := range closer {
+		if p != nil {
+			out[i] = *p
+		}
+	}
+	return out, nil
 }
 
 func lookupPeerOnHTTP(peerIDStr string) []multiaddr.Multiaddr {

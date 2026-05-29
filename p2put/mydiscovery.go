@@ -284,6 +284,8 @@ func DiscoveryV6(ctx context.Context) {
 					log.Printf("[discoveryV6] connect %s: %v", pid.ShortString(), err)
 				} else {
 					log.Printf("[discoveryV6] connected %s", pid.ShortString())
+					addrs, _ := queryObservedAddr(ctx, bootres.Host, pid)
+					_ = addrs
 					pushToConnected(ctx, bootres.Host, pid, bootres.Addrs)
 					// for _, s := range targetPeers {
 					// 	tid, _ := peer.Decode(s)

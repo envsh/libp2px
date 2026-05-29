@@ -2,6 +2,7 @@ package p2put
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"time"
 
@@ -78,4 +79,29 @@ func pushToConnected(ctx context.Context, h host.Host, pid peer.ID, addrs []mult
 		return
 	}
 	log.Printf("[pushAddrs] %v pushed to %s", len(addrs), pid.ShortString())
+}
+
+func queryObservedAddr(ctx context.Context, h host.Host, target peer.ID) ([]multiaddr.Multiaddr, error) {
+	s, err := h.NewStream(ctx, target, identify.ID)
+	if err != nil {
+		return nil, fmt.Errorf("newstream: %w", err)
+	}
+	defer s.Close()
+
+	var mes pb.Identify
+	rd := pbio.NewDelimitedReader(s, 2048)
+	if err := rd.ReadMsg(&mes); err != nil {
+		s.Reset()
+		return nil, fmt.Errorf("read: %w", err)
+	}
+
+	var addrs []multiaddr.Multiaddr
+	if mes.ObservedAddr != nil {
+		m, err := multiaddr.NewMultiaddrBytes(mes.ObservedAddr)
+		if err == nil {
+			addrs = append(addrs, m)
+		}
+	}
+	log.Printf("[queryObservedAddr] from %s: %s", target.ShortString(), addrs)
+	return addrs, nil
 }

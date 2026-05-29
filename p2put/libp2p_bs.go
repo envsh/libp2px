@@ -113,10 +113,12 @@ type BootNode struct {
 	PSO           *pubsub.PubSub
 	Bwc           metrics.Reporter
 	PeerID        peer.ID
+	Addrs         []string // from EvtLocaladdressesupdated
 	PubkeyHex     string
 	BootTime      time.Duration
 	NATStatus     network.Reachability
 	Discovery     *routing.RoutingDiscovery
+	PeerDB        *PeerDB
 }
 
 // 缓存文件格式: map[string][]string (原始地址 → 解析后的地址列表)
@@ -198,6 +200,10 @@ func mainLibp2p(cfg Config) {
 
 	myDumpBoot(res.Host, res.DHT)
 	bootres = res
+	res.PeerDB = NewPeerDB(30 * time.Minute)
+	NewPeerGossip(res.Host, res.PSO, res.PeerDB).Start(context.Background())
+	go AdvertiseHTTP(context.Background())
+	go discoveryV4(context.Background())
 	replayProtocols()
 
 	loadPeerstore(res.Host, peerstorePath)
@@ -213,8 +219,11 @@ func mainLibp2p(cfg Config) {
 		}
 	}()
 
-	go res.myDiscoveryV3()
-	//go myDiscoveryV2()
+	if false {
+		go res.myDiscoveryV3()
+		//go myDiscoveryV2()
+	}
+
 	for _, topic := range currConfig.Topics {
 		if len(topic) <= 0 { continue }
 		getOrSubscribeTopic(topic)
@@ -357,7 +366,7 @@ func Bootstrap(ctx context.Context, cfg Config) (*BootNode, error) {
 		BootTime:  time.Since(start),
 		// Discovery: routingDiscovery,
 	}
-	if true {
+	if false {
 		bsres.bootDHT(ctx, bootstrapInfos)
 	}
 
@@ -413,7 +422,7 @@ func (bsres *BootNode) bootDHT(ctx context.Context, bootstrapInfos []peer.AddrIn
 	kadDHT, err := dht.New(bootCtx, h,
 		dht.Mode(dht.ModeClient),
 		dht.BootstrapPeers(bootstrapInfos...),
-		dht.DisableAutoRefresh(),             // ← 加这一行
+		// dht.DisableAutoRefresh(),
 		dht.Concurrency(1),                   // ← 并发从 10 降到 3
 		dht.RoutingTableRefreshPeriod(15 * time.Minute),  // ← 再加这行, 默认10min
 	)
@@ -495,6 +504,8 @@ func (bootres *BootNode) myDiscoveryV3() {
         // 或
         // bootres.DHT.GetClosestPeers(ctx, bootres.PeerID.String())
 		cancel2()
+
+		bootres.DHT.GetClosestPeers(context.Background(),bootres.PeerID.String())
 		if dur > sec100 {
 			continue
 		}
@@ -663,8 +674,11 @@ func myEventSuber(h host.Host, evts ...any) {
 }
 
 func myDumpBoot(h host.Host, dht *dht.IpfsDHT) {
+	dhtsz := 0
+	if dht != nil {
+		dhtsz = dht.RoutingTable().Size()
+	}
 
-	dhtsz := dht.RoutingTable().Size()
 	conns := GetCurrConns(h)
 
 	log.Printf("conns %v, dht %v", len(conns), dhtsz)

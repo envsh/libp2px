@@ -274,3 +274,44 @@ vendor go-libp2p-pubsub@v0.12.0，打 3 个 patch：
 - `OpenStreamSmart` 只改客户端调用侧，handler 侧不动
 - relay circuit 分离（2.3）不一定可行，libp2p swarm 没有 "dedicated circuit per protocol" 概念，需实验验证
 - 128KB 限制的核心对策是走直连 — hole punch 成功后限制自然消失
+
+---
+
+# DHT FindPeer 问题 & 替代发现方案
+
+## 问题根因
+
+`FindPeer` 返回 `"routing: not found"` 的原因：
+
+| 根因 | 文件 | 行 | 说明 |
+|------|------|----|------|
+| `if true { continue }` 死代码 | `libp2p_bs.go` | 568 | findAndConnect 收集到 peer 但不连接，DHT 路由表无节点 |
+| `DisableAutoRefresh` | `libp2p_bs.go` | 383 | 无自动路由表刷新 |
+| self-FindPeer hack 刷新有限 | `libp2p_bs.go` | 492 | 替代 RefreshRoutingTable() 效果有限 |
+| `fixconn.go` FindPeer 结果丢弃 | `fixconn.go` | 103-104 | `_ = addrinfo` 导致结果未被使用 |
+
+## 纯 TCP 模式
+
+go-libp2p v0.36.2 默认 5 种传输（TCP、QUIC、WebSocket、WebTransport、WebRTC），但用户显式传了 `Transport()` → 仅 TCP + WebSocket。去掉 WebSocket 即纯 TCP。
+
+并非 FindPeer 问题的根因。
+
+## Rendezvous 协议
+
+- 官方 `github.com/libp2p/go-libp2p-rendezvous` 是**空仓库**（无代码）
+- 活跃实现在 Berty fork：`github.com/berty/go-libp2p-rendezvous`
+- 需要 `db.DB`（SQLite 或自实现），无 HTTP 版本
+- 鸡生蛋问题：连不上 rdvPeer 就无法发现
+
+## HTTP 节点发现方案
+
+| 方案 | 协议 | 适用性 |
+|------|------|--------|
+| **自建 HTTP REST registry** | HTTP | ✅ 最推荐，零新依赖 |
+| IPFS Delegated Routing HTTP API | HTTP | 大而全但集成重 |
+| PeerJS/PeerServer | HTTP+WS | Node.js/WebRTC 体系 |
+| PubSub gossip 发现 | libp2p | 零新依赖，有延迟 |
+
+**推荐方案**：在 `restapi.go` 上加两个端点：
+- `POST /api/peer/register` → 注册 `{peer_id, addrs, namespace}`
+- `GET /api/peer/discover?ns=xxx` → 返回 peer 列表

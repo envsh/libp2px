@@ -2,14 +2,18 @@ package p2put
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
 	"reflect"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/ipfs/go-cid"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	discovery2 "github.com/libp2p/go-libp2p/core/discovery"
 	"github.com/libp2p/go-libp2p/core/network"
@@ -17,6 +21,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/routing"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/multiformats/go-multiaddr"
+	"github.com/multiformats/go-multihash"
 )
 
 var bootres *BootNode
@@ -784,4 +789,48 @@ func OffEvent(fn func(any)) error {
 	}
 	delete(eventCallbacks, ptr)
 	return nil
+}
+
+// StringToCID 将任意字符串转换为确定性 CIDv1
+func StringToCID(s string) string {
+	h := sha256.Sum256([]byte(s))
+	mh, err := multihash.Encode(h[:], multihash.SHA2_256)
+	if err != nil {
+		return ""
+	}
+	return cid.NewCidV1(cid.Raw, mh).String()
+}
+
+// FindProvidersBycid 查询公共路由端点，参数 cid 为任意字符串，内部自动转换
+func FindProvidersBycid(cidStr string) ([]FoundPeer, error) {
+	cidStr = StringToCID(cidStr)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		"https://delegated-ipfs.dev/routing/v1/providers/"+cidStr, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("query delegated-ipfs: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var body struct {
+		Providers []struct {
+			ID    string   `json:"ID"`
+			Addrs []string `json:"Addrs"`
+		} `json:"Providers"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return nil, err
+	}
+
+	var out []FoundPeer
+	for _, p := range body.Providers {
+		out = append(out, FoundPeer{PeerID: p.ID, Addrs: p.Addrs})
+	}
+	return out, nil
 }

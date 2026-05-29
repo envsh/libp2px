@@ -92,6 +92,7 @@ func (fxr *connfixer) dofix() {
 				break
 			} else {
 				// err = fxr.connect_relay(p.ID)
+				fxr.connect_direct(p)
 			}
 			if currConfig.IsMobile { break }
 

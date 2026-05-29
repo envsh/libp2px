@@ -274,9 +274,11 @@ func DiscoveryV6(ctx context.Context) {
 					log.Printf("[discoveryV6] connect %s: %v", pid.ShortString(), err)
 				} else {
 					log.Printf("[discoveryV6] connected %s", pid.ShortString())
+					pushToConnected(ctx, bootres.Host, pid, bootres.Addrs)
 					tryStreamToTarget(ctx, "12D3KooWDVExaeKp1YzYvhS7E6oZDdDnEB3HENS9VrYp3vKME7m1")
 					tryStreamToTarget(ctx, "12D3KooWSgyQhqayreZ6UequLq3ZGxJm1WG4tyszD29ps8zNtYLT")
 					tryStreamToTarget(ctx, "12D3KooWHXjoE8cMhPPD7JaUGHHiXCNLHQcbgUQrXFc788oq6ahm")
+					tryStreamToTarget(ctx, "12D3KooWQH1nRGEwBGBtjSbRDpsStcFuoo22KtrzgnbLH7JZNGfu")
 				}
 				time.Sleep(3 * time.Second)
 			}
@@ -300,16 +302,16 @@ func tryStreamToTarget(ctx context.Context, targetID string) {
 		return
 	}
 	if strings.Contains(err.Error(), "no address") {
-		log.Printf("[discoveryV6] lookup %s on HTTP", label)
-		addrs := lookupPeerOnHTTP(targetID)
-		if len(addrs) > 0 {
-			bootres.Host.Peerstore().AddAddrs(pid, addrs, 10*time.Minute)
-			err = doStream(ctx, pid, label)
-			if err == nil {
-				return
-				}
-				time.Sleep(3 * time.Second)
-			}
+		// log.Printf("[discoveryV6] lookup %s on HTTP", label)
+		// addrs := lookupPeerOnHTTP(targetID)
+		// if len(addrs) > 0 {
+		// 	bootres.Host.Peerstore().AddAddrs(pid, addrs, 10*time.Minute)
+		// 	err = doStream(ctx, pid, label)
+		// 	if err == nil {
+		// 		return
+		// 	}
+		// 	time.Sleep(3 * time.Second)
+		// }
 	}
 	log.Printf("[discoveryV6] newstream %s: %v", label, err)
 }

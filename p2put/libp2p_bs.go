@@ -113,7 +113,7 @@ type BootNode struct {
 	PSO           *pubsub.PubSub
 	Bwc           metrics.Reporter
 	PeerID        peer.ID
-	Addrs         []string // from EvtLocaladdressesupdated
+	Addrs         []multiaddr.Multiaddr // from EvtLocalAddressesUpdated
 	PubkeyHex     string
 	BootTime      time.Duration
 	NATStatus     network.Reachability
@@ -202,9 +202,11 @@ func mainLibp2p(cfg Config) {
 	bootres = res
 	res.PeerDB = NewPeerDB(30 * time.Minute)
 	NewPeerGossip(res.Host, res.PSO, res.PeerDB).Start(context.Background())
-	go AdvertiseHTTP(context.Background())
-	go discoveryV4(context.Background())
-	go DiscoveryV6(context.Background())
+	if currConfig.IsMobile {
+		go AdvertiseHTTP(context.Background())
+		go discoveryV4(context.Background())
+		go DiscoveryV6(context.Background())
+	}
 	replayProtocols()
 
 	loadPeerstore(res.Host, peerstorePath)
@@ -220,7 +222,7 @@ func mainLibp2p(cfg Config) {
 		}
 	}()
 
-	if false {
+	if !currConfig.IsMobile {
 		go res.myDiscoveryV3()
 		//go myDiscoveryV2()
 	}
@@ -367,7 +369,7 @@ func Bootstrap(ctx context.Context, cfg Config) (*BootNode, error) {
 		BootTime:  time.Since(start),
 		// Discovery: routingDiscovery,
 	}
-	if false {
+	if !currConfig.IsMobile {
 		bsres.bootDHT(ctx, bootstrapInfos)
 	}
 
@@ -661,10 +663,39 @@ func myEventSuber(h host.Host, evts ...any) {
 				handlePeerConnectednessChanged(e)
 				if e.Connectedness == network.Connected {
 					if addr := IsGoodPeer(e.Peer); addr != "" {
-						log.Printf("[goodpeer] connected: %s addr=%s", e.Peer.ShortString(), addr)
+						// log.Printf("[goodpeer] connected: %s addr=%s", e.Peer.ShortString(), addr)
 					}
 				}
 			case event.EvtLocalAddressesUpdated:
+				total := len(e.Current) + len(e.Removed)
+				addrs := make([]multiaddr.Multiaddr, 0, total)
+				seen := make(map[string]struct{}, total)
+				for _, ua := range e.Current {
+					key := ua.Address.String()
+					if _, ok := seen[key]; ok {
+						continue
+					}
+					seen[key] = struct{}{}
+					addrs = append(addrs, ua.Address)
+				}
+				for _, ua := range e.Removed {
+					key := ua.Address.String()
+					if _, ok := seen[key]; ok {
+						continue
+					}
+					seen[key] = struct{}{}
+					addrs = append(addrs, ua.Address)
+				}
+				if len(addrs)>=3 || len(bootres.Addrs)==0 {
+					bootres.Addrs = addrs
+				}
+				log.Println("collected addrs", len(bootres.Addrs))
+				if e.SignedPeerRecord != nil {
+					pr := &peer.PeerRecord{}
+					if err := e.SignedPeerRecord.TypedRecord(pr); err == nil {
+						// log.Printf("[addrs] signed record: seq=%d addrs=%v", pr.Seq, pr.Addrs)
+					}
+				}
 				go func(){
 					// bootres.DHT.RefreshRoutingTable()
 					// discovery.Advertise(context.Background(), bootres.Discovery, currConfig.HubName)

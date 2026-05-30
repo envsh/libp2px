@@ -129,7 +129,7 @@ type BootNode struct {
 	PSO           *pubsub.PubSub
 	Bwc           metrics.Reporter
 	PeerID        peer.ID
-	Addrs         []multiaddr.Multiaddr // from EvtLocalAddressesUpdated
+	AddrMgr       *AddrManager
 	PubkeyHex     string
 	BootTime      time.Duration
 	NATStatus     network.Reachability
@@ -354,6 +354,7 @@ func Bootstrap(ctx context.Context, cfg Config) (*BootNode, error) {
 		// PSO:       pso,
 		Bwc:       bwc,
 		PeerID:    myID,
+		AddrMgr:   NewAddrManager(),
 		PubkeyHex: pubHex,
 		BootTime:  time.Since(start),
 		// Discovery: routingDiscovery,
@@ -669,29 +670,21 @@ func myEventSuber(h host.Host, evts ...any) {
 					}
 				}
 			case event.EvtLocalAddressesUpdated:
-				total := len(e.Current) + len(e.Removed)
-				addrs := make([]multiaddr.Multiaddr, 0, total)
-				seen := make(map[string]struct{}, total)
-				for _, ua := range e.Current {
-					key := ua.Address.String()
-					if _, ok := seen[key]; ok {
-						continue
-					}
-					seen[key] = struct{}{}
-					addrs = append(addrs, ua.Address)
-				}
-				for _, ua := range e.Removed {
-					key := ua.Address.String()
-					if _, ok := seen[key]; ok {
-						continue
-					}
-					seen[key] = struct{}{}
-					addrs = append(addrs, ua.Address)
-				}
 				if bootres != nil {
-					bootres.Addrs = mergeAddrs(bootres.Addrs, addrs)
+					var curAddrs, relayCircuits []multiaddr.Multiaddr
+					for _, ua := range e.Current {
+						curAddrs = append(curAddrs, ua.Address)
+					}
+					bootres.AddrMgr.SetLocal(mergeAddrs(nil, curAddrs))
+
+					for _, ua := range e.Removed {
+						if isRelayAddr(ua.Address) {
+							relayCircuits = append(relayCircuits, ua.Address)
+						}
+					}
+					bootres.AddrMgr.SetRelayCircuit(mergeAddrs(nil, relayCircuits))
 				}
-				log.Println("collected addrs", len(addrs))
+				log.Println("collected addrs", len(e.Current))
 				if e.SignedPeerRecord != nil {
 					pr := &peer.PeerRecord{}
 					if err := e.SignedPeerRecord.TypedRecord(pr); err == nil {
@@ -870,7 +863,7 @@ func watchStaticRelays(ctx context.Context, h host.Host, relays []peer.AddrInfo)
 						log.Printf("[relay] reserved from %s, expires %s, addrs: %v",
 							r.ID.ShortString(), res.Expiration.Format(time.TimeOnly), res.Addrs)
 						if bootres != nil {
-							bootres.Addrs = mergeAddrs(bootres.Addrs, res.Addrs)
+							bootres.AddrMgr.SetRelayVouch(r.ID, res.Addrs, res.Expiration)
 						}
 					}
 				}

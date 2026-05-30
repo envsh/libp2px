@@ -301,7 +301,7 @@ func DiscoveryV6(ctx context.Context) {
 					log.Printf("[discoveryV6] %v connected %s", n, pid.ShortString())
 					// addrs, _ := queryObservedAddr(ctx, bootres.Host, pid)
 					// _ = addrs
-					pushToConnected(ctx, bootres.Host, pid, bootres.Addrs)
+					pushToConnected(ctx, bootres.Host, pid, bootres.AddrMgr.GetAll())
 					for _, s := range loadTargetPeers() {
 						_ = s
 						// tryStreamToTarget(ctx, s)

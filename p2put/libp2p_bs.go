@@ -661,7 +661,7 @@ func myEventSuber(h host.Host, evts ...any) {
 				handlePeerConnectednessChanged(e)
 				if e.Connectedness == network.Connected {
 					if addr := IsGoodPeer(e.Peer); addr != "" {
-						log.Printf("[goodpeer] connected: %s/p2p/%s", addr, e.Peer.String())
+						log.Printf("[goodpeer] %s/p2p/%s", addr, e.Peer.String())
 					}
 				}
 				if e.Connectedness == network.Limited {
@@ -675,7 +675,7 @@ func myEventSuber(h host.Host, evts ...any) {
 							}
 						}
 					}
-					log.Printf("[limited-px] %s push/1.0=%s protocols=%v", e.Peer.ShortString(), support, protocols)
+					log.Printf("[limited-px] %s push/1.0=%s conn=%s protocols=%v", e.Peer.ShortString(), support, h.Network().Connectedness(e.Peer), protocols)
 				}
 			case event.EvtLocalAddressesUpdated:
 				if bootres != nil {

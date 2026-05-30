@@ -195,24 +195,7 @@ func IsGoodPeer(pid any) string {
 	if bootres == nil || bootres.Host == nil {
 		return ""
 	}
-	for _, a := range bootres.Host.Peerstore().Addrs(p) {
-		if isRelayAddr(a) {
-			continue
-		}
-		s := a.String()
-		if strings.Contains(s, "/tcp/4001") || strings.Contains(s, "/tcp/443") {
-			if ipStr, err := a.ValueForProtocol(multiaddr.P_IP4); err == nil {
-				if isPrivateIP(net.ParseIP(ipStr)) {
-					continue
-				}
-			} else if ipStr, err := a.ValueForProtocol(multiaddr.P_IP6); err == nil {
-				if isPrivateIP(net.ParseIP(ipStr)) {
-					continue
-				}
-			}
-			return s
-		}
-	}
+	addrs := bootres.Host.Peerstore().Addrs(p)
 	for _, c := range bootres.Host.Network().Conns() {
 		if c.RemotePeer() != p {
 			continue
@@ -220,17 +203,24 @@ func IsGoodPeer(pid any) string {
 		if isRelayAddr(c.RemoteMultiaddr()) {
 			continue
 		}
-		s := c.RemoteMultiaddr().String()
+		addrs = append(addrs, c.RemoteMultiaddr())
+	}
+	ai := peer.AddrInfo{ID: p, Addrs: addrs}
+	if !IsGoodPeerAddr(ai) {
+		return ""
+	}
+	for _, a := range addrs {
+		if isRelayAddr(a) {
+			continue
+		}
+		s := a.String()
+		if strings.Contains(s, "libp2p.direct") {
+			continue
+		}
+		if _, err := a.ValueForProtocol(multiaddr.P_IP6); err == nil {
+			continue
+		}
 		if strings.Contains(s, "/tcp/4001") || strings.Contains(s, "/tcp/443") {
-			if ipStr, err := c.RemoteMultiaddr().ValueForProtocol(multiaddr.P_IP4); err == nil {
-				if isPrivateIP(net.ParseIP(ipStr)) {
-					continue
-				}
-			} else if ipStr, err := c.RemoteMultiaddr().ValueForProtocol(multiaddr.P_IP6); err == nil {
-				if isPrivateIP(net.ParseIP(ipStr)) {
-					continue
-				}
-			}
 			return s
 		}
 	}
@@ -283,15 +273,19 @@ func IsGoodPeerAddr(ai peer.AddrInfo) bool {
 		}
 
 		s := a.String()
-		if strings.Contains(s, ":") { continue } // ipv6
+		// filter examples:
+		//   /ip6/64:ff9b::587:a25c/tcp/4001/p2p/Qm...
+		//   /ip4/94.130.66.166/tcp/4001/tls/sni/94-130-66-166.k51qzi5uqu5djnsmc3jqu444j94k2a3rma3tiu1h1dk5ofq5smshiiq6ezeg01.libp2p.direct/ws/p2p/12D3KooWKD5ZdK13CELLDkqskQGE5c1pkoT5ZjP6GcSoKCjmsKBe
+		if strings.Contains(s, "libp2p.direct") {
+			continue
+		}
+		if _, err := a.ValueForProtocol(multiaddr.P_IP6); err == nil {
+			continue
+		}
 		if !strings.Contains(s, "/tcp/4001") && !strings.Contains(s, "/tcp/443") {
 			continue
 		}
 		if ipStr, err := a.ValueForProtocol(multiaddr.P_IP4); err == nil {
-			if !isPrivateIP(net.ParseIP(ipStr)) {
-				return true
-			}
-		} else if ipStr, err := a.ValueForProtocol(multiaddr.P_IP6); err == nil {
 			if !isPrivateIP(net.ParseIP(ipStr)) {
 				return true
 			}

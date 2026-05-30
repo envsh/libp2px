@@ -1,6 +1,7 @@
 package p2put
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -96,19 +97,36 @@ type PushMessage struct {
 	TS    int64      `json:"ts"`
 }
 
+const (
+	maxPushLen  = 1 * 1024 * 1024
+	pushTimeout = 10 * time.Second
+)
+
 // limited custom push handler
 func HandlePushStream(s network.Stream) {
 	pid := s.Conn().RemotePeer()
 	log.Printf("[push] incoming from %s", pid.ShortString())
 
-	raw, err := io.ReadAll(s)
-	if err != nil {
-		log.Printf("[push] read from %s: %v", pid.ShortString(), err)
+	var buf bytes.Buffer
+	readCh := make(chan error, 1)
+	go func() {
+		_, err := io.Copy(&buf, io.LimitReader(s, maxPushLen))
+		readCh <- err
+	}()
+	select {
+	case err := <-readCh:
+		if err != nil {
+			log.Printf("[push] read from %s: %v", pid.ShortString(), err)
+			s.Reset()
+			return
+		}
+	case <-time.After(pushTimeout):
+		log.Printf("[push] read timeout from %s", pid.ShortString())
 		s.Reset()
 		return
 	}
 	var req PushMessage
-	if err := json.Unmarshal(raw, &req); err != nil {
+	if err := json.Unmarshal(buf.Bytes(), &req); err != nil {
 		log.Printf("[push] unmarshal from %s: %v", pid.ShortString(), err)
 		s.Reset()
 		return

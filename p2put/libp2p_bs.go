@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	// "math/rand"
+	"reflect"
 	"net"
 	"os"
 	"log"
@@ -356,7 +357,9 @@ func Bootstrap(ctx context.Context, cfg Config) (*BootNode, error) {
 
 	myEventSuber(h, new(event.EvtLocalReachabilityChanged),
 		new(event.EvtPeerConnectednessChanged),
-		new(event.EvtLocalAddressesUpdated))
+		new(event.EvtLocalAddressesUpdated),
+		new(event.EvtPeerProtocolsUpdated),
+		new(event.EvtPeerIdentificationCompleted))
 	pso, err := pubsub.NewGossipSub(context.Background(), h,
 		pubsub.WithPeerExchange(true),
 		pubsub.WithFloodPublish(true), // can publish to peer, not wait to mesh
@@ -644,7 +647,11 @@ func myEventSuber(h host.Host, evts ...any) {
 	if err != nil { panic(err) }
 	go func() {
 		for evt := range sub.Out() {
-			log.Printf("<< %+v %v\n", evt, "") // reflect.TypeOf(evt)
+			evname := reflect.TypeOf(evt).String()
+			evname = strings.Split(evname, ".")[1][3:]
+			if false {
+				log.Printf("<< %v %+v\n", evname, evt)
+			}
 			rawChan <- evt
 
 			switch e := evt.(type) {
@@ -654,7 +661,7 @@ func myEventSuber(h host.Host, evts ...any) {
 				handlePeerConnectednessChanged(e)
 				if e.Connectedness == network.Connected {
 					if addr := IsGoodPeer(e.Peer); addr != "" {
-						log.Printf("[goodpeer] connected: %s addr=%s", e.Peer.ShortString(), addr)
+						log.Printf("[goodpeer] connected: %s/p2p/%s", addr, e.Peer.String())
 					}
 				}
 				if e.Connectedness == network.Limited {
@@ -668,7 +675,7 @@ func myEventSuber(h host.Host, evts ...any) {
 							}
 						}
 					}
-					log.Printf("[limited-px] %s push/1.0=%s", e.Peer.ShortString(), support)
+					log.Printf("[limited-px] %s push/1.0=%s protocols=%v", e.Peer.ShortString(), support, protocols)
 				}
 			case event.EvtLocalAddressesUpdated:
 				if bootres != nil {
@@ -685,7 +692,7 @@ func myEventSuber(h host.Host, evts ...any) {
 					}
 					bootres.AddrMgr.SetRelayCircuit(mergeAddrs(nil, relayCircuits))
 				}
-				log.Println("collected addrs", len(e.Current))
+				log.Println(evname, "collected addrs", len(e.Current))
 				if e.SignedPeerRecord != nil {
 					pr := &peer.PeerRecord{}
 					if err := e.SignedPeerRecord.TypedRecord(pr); err == nil {
@@ -696,6 +703,35 @@ func myEventSuber(h host.Host, evts ...any) {
 					// bootres.DHT.RefreshRoutingTable()
 					// discovery.Advertise(context.Background(), bootres.Discovery, currConfig.HubName)
 				}()
+			case event.EvtPeerProtocolsUpdated:
+				if e.Peer == bootres.Host.ID() {
+					break
+				}
+				for _, p := range e.Added {
+					if p == LimitedPxProtocol {
+						log.Printf("[limited-px] %s push/1.0=N→Y (updated conn=%s)",
+							e.Peer.ShortString(), h.Network().Connectedness(e.Peer))
+					}
+				}
+				for _, p := range e.Removed {
+					if p == LimitedPxProtocol {
+						log.Printf("[limited-px] %s push/1.0=Y→N (updated conn=%s)",
+							e.Peer.ShortString(), h.Network().Connectedness(e.Peer))
+					}
+				}
+			case event.EvtPeerIdentificationCompleted:
+				if e.Peer == bootres.Host.ID() {
+					break
+				}
+				support := "N"
+				for _, p := range e.Protocols {
+					if p == LimitedPxProtocol {
+						support = "Y"
+						break
+					}
+				}
+				log.Printf("[limited-px] %s push/1.0=%s conn=%s (ident)",
+					e.Peer.ShortString(), support, h.Network().Connectedness(e.Peer))
 			}
 		}
 	}()

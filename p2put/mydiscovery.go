@@ -86,7 +86,7 @@ func AdvertiseHTTP(ctx context.Context) {
 			for i, a := range addrs {
 				strs[i] = a.String()
 			}
-			log.Println("regme", cid, currConfig.HubName, len(addrs))
+			log.Println("regme", cid, currConfig.HubName, "myaddrs", len(addrs))
 
 			body := providersResponse{Providers: []providerEntry{{
 				Schema:   "peer",
@@ -138,7 +138,7 @@ func discoveryV4(ctx context.Context) {
 				log.Printf("[discovery] query: %v", err)
 				continue
 			}
-			log.Println("peers", len(peers), currConfig.HubName)
+			log.Println("http content provider: peers for topic", len(peers), currConfig.HubName)
 			myID := bootres.Host.ID()
 			for _, p := range peers {
 				pid, err := peer.Decode(p.PeerID)
@@ -222,7 +222,76 @@ type dhtPeersResponse struct {
 	Peers []dhtPeer `json:"Peers"`
 }
 
+func reconnectFromPeerDB(ctx context.Context) {
+	if bootres == nil || bootres.Host == nil || bootres.PeerDB == nil || bootres.PSO == nil {
+		return
+	}
+
+	topicPeers := make(map[peer.ID]struct{})
+	for _, pid := range bootres.PSO.ListPeers(currConfig.HubName) {
+		topicPeers[pid] = struct{}{}
+	}
+
+	records := bootres.PeerDB.List()
+	log.Printf("[peerdb] peers/records %v/%v %s", len(topicPeers), len(records), currConfig.HubName)
+	for _, r := range records {
+		if _, in := topicPeers[r.PeerID]; in {
+			continue
+		}
+		if bootres.Host.Network().Connectedness(r.PeerID) != network.NotConnected {
+			continue
+		}
+		if len(bootres.Host.Network().Conns()) > 20 {
+			break
+		}
+		if len(r.Addrs) == 0 {
+			continue
+		}
+
+		info := peer.AddrInfo{ID: r.PeerID, Addrs: r.Addrs}
+
+		cctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+		ctx2 := network.WithAllowLimitedConn(cctx, "peerdb-reconnect")
+		if err := bootres.Host.Connect(ctx2, info); err != nil {
+			cancel()
+			log.Printf("[peerdb] reconnect %s: %v", r.PeerID.ShortString(), err)
+			continue
+		}
+		cancel()
+		peernum := len(bootres.PSO.ListPeers(currConfig.HubName))
+		log.Printf("[peerdb] reconnected %s %s %v", r.PeerID.ShortString(), "peers", peernum)
+
+		pctx, pcancel := context.WithTimeout(ctx, 10*time.Second)
+		res := <-ping.Ping(pctx, bootres.Host, r.PeerID)
+		pcancel()
+		if res.Error != nil {
+			log.Printf("[peerdb] ping %s: %v", r.PeerID.ShortString(), res.Error)
+		} else {
+			log.Printf("[peerdb] ping %s RTT: %s", r.PeerID.ShortString(), res.RTT)
+		}
+
+		select {
+		case <-time.After(5 * time.Second):
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
 func DiscoveryV6(ctx context.Context) {
+	go func() {
+		ticker := time.NewTicker(15 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				reconnectFromPeerDB(ctx)
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
 	interval := discoverInterval
 
 	for i := 0; ; i++ {
@@ -307,7 +376,7 @@ func DiscoveryV6(ctx context.Context) {
 						// tryStreamToTarget(ctx, s)
 						// tryPingToTarget(ctx, s)
 					}
-					log.Println("topic peers", len(bootres.PSO.ListPeers("reddit")))
+					log.Println("topic peers for reddit", len(bootres.PSO.ListPeers("reddit")))
 				}
 				time.Sleep(5 * time.Second)
 			}

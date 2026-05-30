@@ -101,18 +101,6 @@ var libp2pBootstrap = []string{
 	"/ip4/104.131.131.82/tcp/4001/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",
 }
 
-var manualRelays = []string{
-	// "/ip4/104.131.131.82/tcp/4001/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",
-	"/ip4/83.147.246.108/tcp/4001/p2p/12D3KooWSXP8vGvbTaUTUGxncjgCEAeoPQnTHcBLgWRtms1sm3eQ",
-	"/ip4/107.191.52.146/tcp/4001/p2p/12D3KooWETqQmVb6uV9QPTTFSN6bgNoNG2smAanpeNqnwscXoiSw",
-	"/ip4/65.109.60.254/tcp/4001/p2p/12D3KooWL96RJHMjvPzkDzEwSBNei4Ftak7n8gF5Tfn8Dc1cSYQn",
-	"/ip4/157.90.32.77/tcp/4001/p2p/12D3KooWGRFDB7Ho8vNQ21tDRHk2HmJx319XEuMMwvh3CkhQALDF",
-	// "/ip4/216.128.185.210/tcp/4001/p2p/12D3KooWLd7aTPQJBEh81qDUwijhKLqJs4T3xSd3zzyC9ZZ7gUNh",
-	// seems gone
-	// "/ip4/70.34.217.160/tcp/4001/p2p/12D3KooWCCd6dU3XZJZ4A8R7hWd9PQCdmTJhMLuVNLYkvMb8xCqx",
-	"/ip4/93.95.229.144/tcp/4001/p2p/12D3KooWEqtbfoacAdiszAdL8vGYSbhADXcXLKv2wyY34iPwykjv",
-}
-
 var peerstorePath = "/tmp/libp2p_peerstore.json"
 var savedPeerstoreSum string
 
@@ -666,7 +654,7 @@ func myEventSuber(h host.Host, evts ...any) {
 				handlePeerConnectednessChanged(e)
 				if e.Connectedness == network.Connected {
 					if addr := IsGoodPeer(e.Peer); addr != "" {
-						// log.Printf("[goodpeer] connected: %s addr=%s", e.Peer.ShortString(), addr)
+						log.Printf("[goodpeer] connected: %s addr=%s", e.Peer.ShortString(), addr)
 					}
 				}
 			case event.EvtLocalAddressesUpdated:

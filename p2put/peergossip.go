@@ -88,7 +88,11 @@ func (g *PeerGossip) subLoop(ctx context.Context) {
 		if fromPeerID == g.host.ID() {
 			continue
 		}
-		log.Printf("[gossip] %v=%v got from %s data.len=%d data:%s", g.topicName, len(g.ps.ListPeers(g.topicName)), fromPeerID.ShortString(), len(msg.Data), string(msg.Data))
+		dataStr := string(msg.Data)
+		if len(dataStr) > 128 {
+			dataStr = dataStr[:64] + "..." + dataStr[len(dataStr)-64:]
+		}
+		log.Printf("[gossip] %v=%v got from %s data.len=%d data:%s", g.topicName, len(g.ps.ListPeers(g.topicName)), fromPeerID.ShortString(), len(msg.Data), dataStr)
 		var addrs []multiaddr.Multiaddr
 		for _, s := range a.Addrs {
 			m, err := multiaddr.NewMultiaddr(s)

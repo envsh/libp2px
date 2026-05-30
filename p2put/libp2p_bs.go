@@ -207,7 +207,7 @@ func mainLibp2p(cfg Config) {
 	loadPeerstore(res.Host, peerstorePath)
 	replayProtocols()
 
-	res.PeerDB = NewPeerDB(30 * time.Minute)
+	res.PeerDB = NewPeerDB(600 * time.Minute)
 	NewPeerGossip(res.Host, res.PSO, res.PeerDB, currConfig.HubName).Start(context.Background())
 	if currConfig.IsMobile {
 		go AdvertiseHTTP(context.Background())

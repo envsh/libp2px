@@ -458,6 +458,7 @@ func reconnectFromPeerDB(ctx context.Context) {
 }
 
 func DiscoveryV6(ctx context.Context) {
+	api := NewIpfsHttpTrackerApi(trackers[0])
 	go func() {
 		ticker := time.NewTicker(15 * time.Second)
 		defer ticker.Stop()
@@ -489,33 +490,17 @@ func DiscoveryV6(ctx context.Context) {
 			if cid == "" {
 				continue
 			}
-			url := trackers[0] + "/routing/v1/dht/closest/peers/" + cid
 
-			req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+			peers, err := api.FindClosestPeers(ctx, cid)
 			if err != nil {
-				log.Printf("[discoveryV6] create req: %v", err)
+				log.Printf("[discoveryV6] query: %v", err)
 				continue
 			}
-			req.Header.Set("Accept", "application/json")
-
-			resp, err := http.DefaultClient.Do(req)
-			if err != nil {
-				log.Printf("[discoveryV6] GET error: %v", err)
-				continue
-			}
-
-			var result dhtPeersResponse
-			if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-				resp.Body.Close()
-				log.Printf("[discoveryV6] decode: %v", err)
-				continue
-			}
-			resp.Body.Close()
 
 			myID := bootres.Host.ID()
-			for n, p := range result.Peers {
+			for n, p := range peers {
 				if n%3==1 { time.Sleep(1*time.Second); continue }
-				pid, err := peer.Decode(p.ID)
+				pid, err := peer.Decode(p.PeerID)
 				if err != nil {
 					continue
 				}

@@ -3,6 +3,7 @@ package p2put
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -19,6 +21,7 @@ import (
 	dht_pb "github.com/libp2p/go-libp2p-kad-dht/pb"
 	"github.com/libp2p/go-msgio/protoio"
 	"github.com/multiformats/go-multiaddr"
+	"github.com/multiformats/go-multibase"
 )
 
 var trackers = []string{
@@ -49,20 +52,258 @@ func loadTargetPeers() []string {
 
 func trackerURL() string { return trackers[activeTracker] }
 
-type providerPayload struct {
-	Addrs []string `json:"Addrs"`
+// Internal types for PUT request (IPIP-526 signed Bitswap format).
+type ipfsPutPayload struct {
+	Keys        []string `json:"Keys"`
+	Timestamp   int64 `json:"Timestamp"`
+	AdvisoryTTL int64 `json:"AdvisoryTTL,omitempty"`
+	ID          string   `json:"ID"`
+	Addrs       []string `json:"Addrs"`
+}
+
+type ipfsPutRecord struct {
+	Schema    string         `json:"Schema"`
+	Protocol  string         `json:"Protocol"`
+	Signature string         `json:"Signature,omitempty"`
+	Payload   ipfsPutPayload `json:"Payload"`
+}
+
+type ipfsPutRequest struct {
+	Providers []ipfsPutRecord `json:"Providers"`
+}
+
+// Internal types for GET response (IPIP-417 flat format).
+type ipfsProviderRecord struct {
 	ID    string   `json:"ID"`
-	Keys  []string `json:"Keys"`
+	Addrs []string `json:"Addrs"`
 }
 
-type providerEntry struct {
-	Schema   string          `json:"Schema"`
-	Protocol string          `json:"Protocol"`
-	Payload  providerPayload `json:"Payload"`
+type ipfsProvidersResponse struct {
+	Providers []ipfsProviderRecord `json:"Providers"`
 }
 
-type providersResponse struct {
-	Providers []providerEntry `json:"Providers"`
+// IpfsHttpTrackerApi encapsulates HTTP calls to an IPFS Delegated Routing V1 API tracker.
+//
+// Different methods use different tracker endpoints:
+//
+//	FindProviders → GET /routing/v1/providers/{cid}       (trackers[0]: delegated-ipfs.dev)
+//	Provide       → PUT /routing/v1/providers/             (trackers[0]: delegated-ipfs.dev)
+//
+// Methods default to trackers[0] due to other trackers returning errors on these endpoints.
+type IpfsHttpTrackerApi struct {
+	baseURL string
+	cli     *http.Client
+}
+
+func NewIpfsHttpTrackerApi(baseURL string) *IpfsHttpTrackerApi {
+	return &IpfsHttpTrackerApi{
+		baseURL: strings.TrimRight(baseURL, "/"),
+		cli:     http.DefaultClient,
+	}
+}
+
+// FindProviders queries GET /routing/v1/providers/{cid}.
+//
+// Response format (IPIP-417 flat, confirmed by boxo server code):
+//
+//	{"Providers":[{"ID":"12...","Addrs":["/ip4/..."],"Schema":"peer"}]}
+//	ID    ✅ fully confirmed: directly on provider level
+//	Addrs ✅ fully confirmed: directly on provider level
+//
+// Parameters:
+//
+//	cid — CIDv1 string (e.g., "bafkrei...")
+func (api *IpfsHttpTrackerApi) FindProviders(ctx context.Context, cid string) ([]FoundPeer, error) {
+	if cid == "" {
+		return nil, fmt.Errorf("empty cid")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		api.baseURL+"/routing/v1/providers/"+cid, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := api.cli.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var pr ipfsProvidersResponse
+	if err := json.NewDecoder(resp.Body).Decode(&pr); err != nil {
+		return nil, err
+	}
+
+	var out []FoundPeer
+	for _, p := range pr.Providers {
+		if p.ID == "" {
+			continue
+		}
+		out = append(out, FoundPeer{PeerID: p.ID, Addrs: p.Addrs})
+	}
+	return out, nil
+}
+
+// Provide sends PUT /routing/v1/providers/ to register this peer as a provider of cid.
+//
+// Request format (IPIP-526 signed Bitswap, confirmed by boxo server code):
+//
+//	{"Providers":[{"Schema":"bitswap","Protocol":"transport-bitswap",
+//	  "Signature":"mbase64...","Payload":{...}}]}
+//
+//	Schema    ✅ fully confirmed: server discriminates on Schema=="bitswap"
+//	Protocol  ✅ fully confirmed: spec value is "transport-bitswap"
+//	Signature ✅ fully confirmed: SHA256(Payload JSON) → privKey.Sign → multibase(Base64)
+//	Payload.ID        ✅ fully confirmed: peer ID string
+//	Payload.Addrs     ✅ fully confirmed: multiaddr string array
+//	Payload.Keys      ✅ fully confirmed: CID string array
+//	Payload.Timestamp ⚠️ pending confirm: RFC3339 format (inferred from boxo types.Time)
+//	Payload.AdvisoryTTL  ⚠️ pending confirm: Go duration string (e.g., "48h0m0s", optional)
+//
+// Private key is obtained via bootres.Host.Peerstore().PrivKey(bootres.Host.ID()).
+func (api *IpfsHttpTrackerApi) Provide(ctx context.Context, cid string, id peer.ID, addrs []multiaddr.Multiaddr, key crypto.PrivKey) error {
+	strs := make([]string, len(addrs))
+	for i, a := range addrs {
+		strs[i] = a.String()
+	}
+
+	payload := ipfsPutPayload{
+		Keys:        []string{cid},
+		Timestamp:   time.Now().UTC().UnixMilli(),
+		AdvisoryTTL: int64(48 * time.Hour),
+		ID:          id.String(),
+		Addrs:       strs,
+	}
+	payloadJSON, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("marshal payload: %w", err)
+	}
+
+	hash := sha256.Sum256(payloadJSON)
+	sigBytes, err := key.Sign(hash[:])
+	if err != nil {
+		return fmt.Errorf("sign: %w", err)
+	}
+	sigStr, err := multibase.Encode(multibase.Base64, sigBytes)
+	if err != nil {
+		return fmt.Errorf("encode sig: %w", err)
+	}
+
+	body := ipfsPutRequest{Providers: []ipfsPutRecord{{
+		Schema:    "bitswap",
+		Protocol:  "transport-bitswap",
+		Signature: sigStr,
+		Payload:   payload,
+	}}}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return fmt.Errorf("marshal body: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut,
+		api.baseURL+"/routing/v1/providers/", bytes.NewReader(data))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := api.cli.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("PUT %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	return nil
+}
+
+// FindClosestPeers queries GET /routing/v1/dht/closest/peers/{key}.
+//
+// Response format:
+//
+//	{"Peers":[{"ID":"12...","Addrs":["/ip4/..."],"Schema":"peer"}]}
+//
+// Uses existing dhtPeersResponse / dhtPeer types.
+//
+// Tracker availability:
+//
+//	trackers[0] ✅ (confirmed via V6 production use)
+func (api *IpfsHttpTrackerApi) FindClosestPeers(ctx context.Context, key string) ([]FoundPeer, error) {
+	if key == "" {
+		return nil, fmt.Errorf("empty key")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		api.baseURL+"/routing/v1/dht/closest/peers/"+key, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := api.cli.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var pr dhtPeersResponse
+	if err := json.NewDecoder(resp.Body).Decode(&pr); err != nil {
+		return nil, err
+	}
+
+	var out []FoundPeer
+	for _, p := range pr.Peers {
+		if p.ID == "" {
+			continue
+		}
+		out = append(out, FoundPeer{PeerID: p.ID, Addrs: p.Addrs})
+	}
+	return out, nil
+}
+
+// FindPeers queries GET /routing/v1/peers/{peer-id}.
+//
+// Response format:
+//
+//	{"Peers":[{"ID":"12...","Addrs":["/ip4/..."],"Schema":"peer"}]}
+//
+// Uses existing dhtPeersResponse / dhtPeer types.
+//
+// Tracker availability:
+//
+//	trackers[0] ✅ (confirmed via lookupPeerOnHTTP)
+func (api *IpfsHttpTrackerApi) FindPeers(ctx context.Context, peerID string) ([]FoundPeer, error) {
+	if peerID == "" {
+		return nil, fmt.Errorf("empty peerID")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		api.baseURL+"/routing/v1/peers/"+peerID, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := api.cli.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var pr dhtPeersResponse
+	if err := json.NewDecoder(resp.Body).Decode(&pr); err != nil {
+		return nil, err
+	}
+
+	var out []FoundPeer
+	for _, p := range pr.Peers {
+		if p.ID == "" {
+			continue
+		}
+		out = append(out, FoundPeer{PeerID: p.ID, Addrs: p.Addrs})
+	}
+	return out, nil
 }
 
 func AdvertiseHTTP(ctx context.Context) {
@@ -72,6 +313,7 @@ func AdvertiseHTTP(ctx context.Context) {
 		return
 	}
 
+	api := NewIpfsHttpTrackerApi(trackers[0])
 	ticker := time.NewTicker(advertiseInterval)
 	defer ticker.Stop()
 
@@ -81,40 +323,13 @@ func AdvertiseHTTP(ctx context.Context) {
 			if bootres == nil || bootres.Host == nil {
 				continue
 			}
-			addrs := bootres.Host.Addrs()
-			strs := make([]string, len(addrs))
-			for i, a := range addrs {
-				strs[i] = a.String()
-			}
-			log.Println("regme", cid, currConfig.HubName, "myaddrs", len(addrs))
-
-			body := providersResponse{Providers: []providerEntry{{
-				Schema:   "peer",
-				Protocol: "transport-bitswap",
-				Payload: providerPayload{
-					Addrs: strs,
-					ID:    bootres.Host.ID().String(),
-					Keys:  []string{cid},
-				},
-			}}}
-			data, _ := json.Marshal(body)
-
-			req, err := http.NewRequestWithContext(ctx, http.MethodPut,
-				trackerURL()+"/routing/v1/providers/", bytes.NewReader(data))
-			if err != nil {
-				log.Printf("[advertise] create req: %v", err)
+			key := bootres.Host.Peerstore().PrivKey(bootres.Host.ID())
+			if key == nil {
+				log.Println("[advertise] no private key")
 				continue
 			}
-			req.Header.Set("Content-Type", "application/json")
-
-			resp, err := http.DefaultClient.Do(req)
-			if err != nil {
+			if err := api.Provide(ctx, cid, bootres.Host.ID(), bootres.Host.Addrs(), key); err != nil {
 				log.Printf("[advertise] PUT error: %v", err)
-				continue
-			}
-			resp.Body.Close()
-			if resp.StatusCode >= 300 {
-				log.Printf("[advertise] PUT %d", resp.StatusCode)
 			}
 
 		case <-ctx.Done():
@@ -124,6 +339,7 @@ func AdvertiseHTTP(ctx context.Context) {
 }
 
 func discoveryV4(ctx context.Context) {
+	api := NewIpfsHttpTrackerApi(trackers[0])
 	ticker := time.NewTicker(discoverInterval)
 	defer ticker.Stop()
 
@@ -133,7 +349,7 @@ func discoveryV4(ctx context.Context) {
 			if bootres == nil || bootres.Host == nil {
 				continue
 			}
-			peers, err := findProviders(trackerURL(), currConfig.HubName)
+			peers, err := api.FindProviders(ctx, StringToCID(currConfig.HubName))
 			if err != nil {
 				log.Printf("[discovery] query: %v", err)
 				continue
@@ -174,43 +390,6 @@ func discoveryV4(ctx context.Context) {
 			return
 		}
 	}
-}
-
-func findProviders(baseURL, hubname string) ([]FoundPeer, error) {
-	cid := StringToCID(hubname)
-	if cid == "" {
-		return nil, fmt.Errorf("StringToCID returned empty for hubname %q", hubname)
-	}
-
-	req, err := http.NewRequest(http.MethodGet,
-		baseURL+"/routing/v1/providers/"+cid, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var pr providersResponse
-	if err := json.NewDecoder(resp.Body).Decode(&pr); err != nil {
-		return nil, err
-	}
-
-	var out []FoundPeer
-	for _, prov := range pr.Providers {
-		if prov.Schema != "peer" || prov.Payload.ID == "" {
-			continue
-		}
-		out = append(out, FoundPeer{
-			PeerID: prov.Payload.ID,
-			Addrs:  prov.Payload.Addrs,
-		})
-	}
-	return out, nil
 }
 
 type dhtPeer struct {

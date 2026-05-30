@@ -81,6 +81,8 @@ func pushToConnected(ctx context.Context, h host.Host, pid peer.ID, addrs []mult
 	log.Printf("[pushAddrs] %v pushed to %s", len(addrs), pid.ShortString())
 }
 
+const LimitedPxProtocol = protocol.ID("/d2hub/push/1.0")
+
 func queryObservedAddr(ctx context.Context, h host.Host, target peer.ID) ([]multiaddr.Multiaddr, error) {
 	s, err := h.NewStream(ctx, target, identify.ID)
 	if err != nil {

@@ -657,6 +657,19 @@ func myEventSuber(h host.Host, evts ...any) {
 						log.Printf("[goodpeer] connected: %s addr=%s", e.Peer.ShortString(), addr)
 					}
 				}
+				if e.Connectedness == network.Limited {
+					protocols, err := bootres.Host.Peerstore().GetProtocols(e.Peer)
+					support := "N"
+					if err == nil {
+						for _, p := range protocols {
+							if protocol.ID(p) == LimitedPxProtocol {
+								support = "Y"
+								break
+							}
+						}
+					}
+					log.Printf("[limited-px] %s push/1.0=%s", e.Peer.ShortString(), support)
+				}
 			case event.EvtLocalAddressesUpdated:
 				if bootres != nil {
 					var curAddrs, relayCircuits []multiaddr.Multiaddr

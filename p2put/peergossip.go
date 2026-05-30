@@ -107,7 +107,9 @@ func (g *PeerGossip) subLoop(ctx context.Context) {
 				log.Printf("[gossip] peer %s addrs changed: +%d -%d", pid.ShortString(), len(added), len(removed))
 			}
 		}
-		g.db.Update(pid, addrs)
+		if false {
+			g.db.Update(pid, addrs)
+		}
 	}
 }
 

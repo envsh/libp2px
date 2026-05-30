@@ -102,6 +102,7 @@ const (
 	pushTimeout = 10 * time.Second
 )
 
+// listen /d2hub/push/1.0
 // limited custom push handler
 func HandlePushStream(s network.Stream) {
 	pid := s.Conn().RemotePeer()
@@ -150,11 +151,15 @@ func HandlePushStream(s network.Stream) {
 		}
 		bootres.PeerDB.Update(rpid, addrs)
 	}
+	log.Println("[limitpx] addup peer curr/total", len(req.Peers), bootres.PeerDB.List())
 
 	records := bootres.PeerDB.List()
 	resp := PushMessage{TS: time.Now().UnixMilli()}
 	for _, r := range records {
 		if r.PeerID == bootres.Host.ID() {
+			continue
+		}
+		if r.PeerID == pid {
 			continue
 		}
 		strs := make([]string, len(r.Addrs))
@@ -182,8 +187,9 @@ func HandlePushStream(s network.Stream) {
 	log.Printf("[push] %d peers sent to %s", len(resp.Peers), pid.ShortString())
 }
 
-func PushToPeer(ctx context.Context, pid peer.ID) {
-	addrs := bootres.Host.Addrs()
+// send /d2hub/push/1.0
+func PushToPeer(ctx context.Context, pid peer.ID) error {
+	addrs := bootres.AddrMgr.GetAll()
 	req := PushMessage{
 		Peers: []PeerInfo{{
 			ID:    bootres.Host.ID().String(),
@@ -196,7 +202,7 @@ func PushToPeer(ctx context.Context, pid peer.ID) {
 	s, err := bootres.Host.NewStream(ctx, pid, LimitedPxProtocol)
 	if err != nil {
 		log.Printf("[push] newstream %s: %v", pid.ShortString(), err)
-		return
+		return err
 	}
 	defer s.Close()
 
@@ -204,27 +210,28 @@ func PushToPeer(ctx context.Context, pid peer.ID) {
 	if err != nil {
 		log.Printf("[push] marshal: %v", err)
 		s.Reset()
-		return
+		return err
 	}
 	if _, err := s.Write(out); err != nil {
 		s.CloseWrite()
 		log.Printf("[push] write to %s: %v", pid.ShortString(), err)
-		return
+		return err
 	}
 	s.CloseWrite()
 
 	raw, err := io.ReadAll(s)
 	if err != nil {
 		log.Printf("[push] read from %s: %v", pid.ShortString(), err)
-		return
+		return err
 	}
 	var resp PushMessage
 	if err := json.Unmarshal(raw, &resp); err != nil {
 		log.Printf("[push] unmarshal from %s: %v", pid.ShortString(), err)
-		return
+		return err
 	}
 
 	log.Printf("[push] got %d peers from %s", len(resp.Peers), pid.ShortString())
+	return nil
 }
 
 func addrStrings(addrs []multiaddr.Multiaddr) []string {

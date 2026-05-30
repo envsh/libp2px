@@ -732,6 +732,17 @@ func myEventSuber(h host.Host, evts ...any) {
 				}
 				log.Printf("[limited-px] %s push/1.0=%s conn=%s (ident)",
 					e.Peer.ShortString(), support, h.Network().Connectedness(e.Peer))
+				if support=="Y" &&
+					h.Network().Connectedness(e.Peer) == network.Limited {
+					go func() {
+						btime := time.Now()
+						ctx, cancel := AllowLimitedConn(15, "limitpx")
+						defer cancel()
+						err := PushToPeer(ctx, e.Peer)
+						log.Printf("[limited-px] %s push/1.0=%s pushed %v %v",
+							e.Peer.ShortString(), support, time.Since(btime), err)
+					}()
+				}
 			}
 		}
 	}()

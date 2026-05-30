@@ -293,3 +293,13 @@ func IsGoodPeerAddr(ai peer.AddrInfo) bool {
 	}
 	return false
 }
+
+func AllowLimitedConn(timeoutsec int, name string) (context.Context, func()){
+	if timeoutsec <= 0 {
+		timeoutsec = 999_999_999
+	}
+	ctx := context.Background()
+	ctx2, cancel := context.WithTimeout(ctx, time.Duration(timeoutsec)*time.Second)
+	ctx3 := network.WithAllowLimitedConn(ctx2, name)
+	return ctx3, cancel
+}

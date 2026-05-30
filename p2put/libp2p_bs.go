@@ -124,6 +124,7 @@ type BootNode struct {
 	NATStatus     network.Reachability
 	Discovery     *routing.RoutingDiscovery
 	PeerDB        *PeerDB
+	RelayPool     *RelayPool
 }
 
 // 缓存文件格式: map[string][]string (原始地址 → 解析后的地址列表)
@@ -348,6 +349,14 @@ func Bootstrap(ctx context.Context, cfg Config) (*BootNode, error) {
 		BootTime:  time.Since(start),
 		// Discovery: routingDiscovery,
 	}
+
+	rp := NewRelayPool(WeightConfig{})
+	for _, r := range staticRelays {
+		rp.Add(r.Addrs[0].String() + "/p2p/" + r.ID.String())
+		rp.Protect(r.ID)
+	}
+	bsres.RelayPool = rp
+
 	if !currConfig.IsMobile {
 		bsres.bootDHT(ctx)
 	}
@@ -887,8 +896,20 @@ func watchStaticRelays(ctx context.Context, h host.Host, relays []peer.AddrInfo)
 						continue
 					}
 					pctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-					<-ping.Ping(pctx, h, r.ID)
+					res := <-ping.Ping(pctx, h, r.ID)
 					cancel()
+					if bootres != nil && bootres.RelayPool != nil {
+						if res.Error != nil {
+							bootres.RelayPool.RecordResult(r.ID, res.Error)
+						} else {
+							bootres.RelayPool.RecordResult(r.ID, nil)
+						}
+					}
+				}
+				if bootres != nil && bootres.RelayPool != nil {
+					if maddr := bootres.RelayPool.Select(); maddr != nil {
+						log.Printf("[relaypool] select: %s", maddr.String())
+					}
 				}
 			case <-ctx.Done():
 				return
@@ -909,11 +930,18 @@ func watchStaticRelays(ctx context.Context, h host.Host, relays []peer.AddrInfo)
 					cancel()
 					if err != nil {
 						log.Printf("[relay] reserve %s: %v", r.ID.ShortString(), err)
+						if bootres != nil && bootres.RelayPool != nil {
+							bootres.RelayPool.RecordResult(r.ID, err)
+						}
 					} else {
 						log.Printf("[relay] reserved from %s, expires %s, addrs: %v",
 							r.ID.ShortString(), res.Expiration.Format(time.TimeOnly), res.Addrs)
 						if bootres != nil {
 							bootres.AddrMgr.SetRelayVouch(r.ID, res.Addrs, res.Expiration)
+							if bootres.RelayPool != nil {
+								bootres.RelayPool.SetReservationTTL(r.ID, res.Expiration)
+								bootres.RelayPool.RecordResult(r.ID, nil)
+							}
 						}
 					}
 				}

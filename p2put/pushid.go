@@ -151,7 +151,7 @@ func HandlePushStream(s network.Stream) {
 		}
 		bootres.PeerDB.Update(rpid, addrs)
 	}
-	log.Println("[limitpx] addup peer curr/total", len(req.Peers), bootres.PeerDB.List())
+	log.Println("[limitpx] addup peer curr/total", len(req.Peers), len(bootres.PeerDB.List()))
 
 	records := bootres.PeerDB.List()
 	resp := PushMessage{TS: time.Now().UnixMilli()}
@@ -231,6 +231,25 @@ func PushToPeer(ctx context.Context, pid peer.ID) error {
 	}
 
 	log.Printf("[push] got %d peers from %s", len(resp.Peers), pid.ShortString())
+	for _, p := range resp.Peers {
+		rpid, err := peer.Decode(p.ID)
+		if err != nil {
+			continue
+		}
+		if rpid == bootres.Host.ID() {
+			continue
+		}
+		addrs := make([]multiaddr.Multiaddr, 0, len(p.Addrs))
+		for _, s := range p.Addrs {
+			m, err := multiaddr.NewMultiaddr(s)
+			if err != nil {
+				continue
+			}
+			addrs = append(addrs, m)
+		}
+		bootres.PeerDB.Update(rpid, addrs)
+	}
+
 	return nil
 }
 

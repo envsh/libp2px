@@ -2,12 +2,15 @@ package p2put
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/host"
+	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/libp2p/go-libp2p/p2p/protocol/identify"
@@ -82,6 +85,152 @@ func pushToConnected(ctx context.Context, h host.Host, pid peer.ID, addrs []mult
 }
 
 const LimitedPxProtocol = protocol.ID("/d2hub/push/1.0")
+
+type PeerInfo struct {
+	ID    string   `json:"id"`
+	Addrs []string `json:"addrs"`
+}
+
+type PushMessage struct {
+	Peers []PeerInfo `json:"peers"`
+	TS    int64      `json:"ts"`
+}
+
+// limited custom push handler
+func HandlePushStream(s network.Stream) {
+	pid := s.Conn().RemotePeer()
+	log.Printf("[push] incoming from %s", pid.ShortString())
+
+	raw, err := io.ReadAll(s)
+	if err != nil {
+		log.Printf("[push] read from %s: %v", pid.ShortString(), err)
+		s.Reset()
+		return
+	}
+	var req PushMessage
+	if err := json.Unmarshal(raw, &req); err != nil {
+		log.Printf("[push] unmarshal from %s: %v", pid.ShortString(), err)
+		s.Reset()
+		return
+	}
+
+	for _, p := range req.Peers {
+		rpid, err := peer.Decode(p.ID)
+		if err != nil {
+			continue
+		}
+		if rpid == bootres.Host.ID() {
+			continue
+		}
+		addrs := make([]multiaddr.Multiaddr, 0, len(p.Addrs))
+		for _, s := range p.Addrs {
+			m, err := multiaddr.NewMultiaddr(s)
+			if err != nil {
+				continue
+			}
+			addrs = append(addrs, m)
+		}
+		bootres.PeerDB.Update(rpid, addrs)
+	}
+
+	records := bootres.PeerDB.List()
+	resp := PushMessage{TS: time.Now().UnixMilli()}
+	for _, r := range records {
+		if r.PeerID == bootres.Host.ID() {
+			continue
+		}
+		strs := make([]string, len(r.Addrs))
+		for i, a := range r.Addrs {
+			strs[i] = a.String()
+		}
+		resp.Peers = append(resp.Peers, PeerInfo{
+			ID:    r.PeerID.String(),
+			Addrs: strs,
+		})
+	}
+
+	out, err := json.Marshal(resp)
+	if err != nil {
+		log.Printf("[push] marshal: %v", err)
+		s.Reset()
+		return
+	}
+	if _, err := s.Write(out); err != nil {
+		log.Printf("[push] write to %s: %v", pid.ShortString(), err)
+		s.Reset()
+		return
+	}
+	s.Close()
+	log.Printf("[push] %d peers sent to %s", len(resp.Peers), pid.ShortString())
+}
+
+func PushToPeer(ctx context.Context, pid peer.ID) {
+	addrs := bootres.Host.Addrs()
+	req := PushMessage{
+		Peers: []PeerInfo{{
+			ID:    bootres.Host.ID().String(),
+			Addrs: addrStrings(addrs),
+		}},
+		TS: time.Now().UnixMilli(),
+	}
+
+	ctx = network.WithAllowLimitedConn(ctx, "push/1.0")
+	s, err := bootres.Host.NewStream(ctx, pid, LimitedPxProtocol)
+	if err != nil {
+		log.Printf("[push] newstream %s: %v", pid.ShortString(), err)
+		return
+	}
+	defer s.Close()
+
+	out, err := json.Marshal(req)
+	if err != nil {
+		log.Printf("[push] marshal: %v", err)
+		s.Reset()
+		return
+	}
+	if _, err := s.Write(out); err != nil {
+		s.CloseWrite()
+		log.Printf("[push] write to %s: %v", pid.ShortString(), err)
+		return
+	}
+	s.CloseWrite()
+
+	raw, err := io.ReadAll(s)
+	if err != nil {
+		log.Printf("[push] read from %s: %v", pid.ShortString(), err)
+		return
+	}
+	var resp PushMessage
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		log.Printf("[push] unmarshal from %s: %v", pid.ShortString(), err)
+		return
+	}
+
+	log.Printf("[push] got %d peers from %s", len(resp.Peers), pid.ShortString())
+}
+
+func addrStrings(addrs []multiaddr.Multiaddr) []string {
+	s := make([]string, len(addrs))
+	for i, a := range addrs {
+		s[i] = a.String()
+	}
+	return s
+}
+
+func parseAddrs(strs []string) []multiaddr.Multiaddr {
+	addrs := make([]multiaddr.Multiaddr, 0, len(strs))
+	for _, s := range strs {
+		m, err := multiaddr.NewMultiaddr(s)
+		if err == nil {
+			addrs = append(addrs, m)
+		}
+	}
+	return addrs
+}
+
+func init() {
+	MustRegisterProtocol("push/1.0", HandlePushStream)
+}
 
 func queryObservedAddr(ctx context.Context, h host.Host, target peer.ID) ([]multiaddr.Multiaddr, error) {
 	s, err := h.NewStream(ctx, target, identify.ID)

@@ -145,6 +145,7 @@ func (api *IpfsHttpTrackerApi) FindProviders(ctx context.Context, cid string) ([
 	return out, nil
 }
 
+// PUT /routing/v1/providers/ 是 实验性遗留端点（IPIP-526），从未被 HTTP Routing V1 规范正式标准化。
 // Provide sends PUT /routing/v1/providers/ to register this peer as a provider of cid.
 //
 // Request format (IPIP-526 signed Bitswap, confirmed by boxo server code):

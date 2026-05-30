@@ -801,7 +801,8 @@ func cleanPeerstore() {
 		return
 	}
 	for _, pid := range ps.Peers() {
-		if isBootstrapPeer(pid) {
+		// skip self — host ID is in Peers() (via AddPrivKey) but Connectedness returns NotConnected
+		if pid == bootres.Host.ID() || isBootstrapPeer(pid) {
 			continue
 		}
 		if h.Network().Connectedness(pid) != network.Connected {

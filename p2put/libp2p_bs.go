@@ -108,7 +108,8 @@ var manualRelays = []string{
 	"/ip4/65.109.60.254/tcp/4001/p2p/12D3KooWL96RJHMjvPzkDzEwSBNei4Ftak7n8gF5Tfn8Dc1cSYQn",
 	"/ip4/157.90.32.77/tcp/4001/p2p/12D3KooWGRFDB7Ho8vNQ21tDRHk2HmJx319XEuMMwvh3CkhQALDF",
 	// "/ip4/216.128.185.210/tcp/4001/p2p/12D3KooWLd7aTPQJBEh81qDUwijhKLqJs4T3xSd3zzyC9ZZ7gUNh",
-	"/ip4/70.34.217.160/tcp/4001/p2p/12D3KooWCCd6dU3XZJZ4A8R7hWd9PQCdmTJhMLuVNLYkvMb8xCqx",
+	// seems gone
+	// "/ip4/70.34.217.160/tcp/4001/p2p/12D3KooWCCd6dU3XZJZ4A8R7hWd9PQCdmTJhMLuVNLYkvMb8xCqx",
 	"/ip4/93.95.229.144/tcp/4001/p2p/12D3KooWEqtbfoacAdiszAdL8vGYSbhADXcXLKv2wyY34iPwykjv",
 }
 
@@ -287,6 +288,7 @@ func Bootstrap(ctx context.Context, cfg Config) (*BootNode, error) {
 		autorelay.WithNumRelays(5),
 		autorelay.WithMinCandidates(5),
 		autorelay.WithBootDelay(60*time.Second),
+		autorelay.WithBackoff(3*time.Minute),
 	)
 	if currConfig.IsMobile {
 		autoRelayOpt = libp2p.EnableAutoRelayWithStaticRelays(
@@ -295,6 +297,7 @@ func Bootstrap(ctx context.Context, cfg Config) (*BootNode, error) {
 			autorelay.WithNumRelays(2),
 			autorelay.WithMinCandidates(3),
 			autorelay.WithBootDelay(30*time.Second),
+			autorelay.WithBackoff(3*time.Minute),
 		)
 	}
 	bwc := metrics.NewBandwidthCounter()

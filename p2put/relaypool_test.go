@@ -888,6 +888,116 @@ func TestConcurrent_RecordResultRace(t *testing.T) {
 	<-done
 }
 
+// ────────────────────────── 9. SelectN ──────────────────────────
+
+func TestSelectN_Basic(t *testing.T) {
+	rp := NewRelayPool(WeightConfig{Success: 1})
+	p1, p2, p3, p4 := newTestPid(t, 1), newTestPid(t, 2), newTestPid(t, 3), newTestPid(t, 4)
+	rp.Add(testAddr(p1))
+	rp.Add(testAddr(p2))
+	rp.Add(testAddr(p3))
+	rp.Add(testAddr(p4))
+
+	rp.RecordResult(p1, nil) // main, score=0.91 (ema from 0.70)
+	rp.RecordResult(p2, nil)
+	rp.RecordResult(p3, nil)
+	rp.RecordResult(p4, errFailedErr()) // probation, circuitOpen
+
+	infos := rp.SelectN(2)
+	if len(infos) != 2 {
+		t.Fatalf("SelectN(2) = %d, want 2", len(infos))
+	}
+	// p4 is circuitOpen, should not appear
+	for _, ai := range infos {
+		if ai.ID == p4 {
+			t.Errorf("SelectN includes circuitOpen relay %s", p4.ShortString())
+		}
+	}
+}
+
+func TestSelectN_Zero(t *testing.T) {
+	rp := NewRelayPool(WeightConfig{})
+	infos := rp.SelectN(2)
+	if len(infos) != 0 {
+		t.Errorf("SelectN on empty pool = %d, want empty", len(infos))
+	}
+}
+
+func TestSelectN_OverCount(t *testing.T) {
+	rp := NewRelayPool(WeightConfig{})
+	p1, p2 := newTestPid(t, 1), newTestPid(t, 2)
+	rp.Add(testAddr(p1))
+	rp.Add(testAddr(p2))
+
+	infos := rp.SelectN(5)
+	if len(infos) != 2 {
+		t.Errorf("SelectN(5) = %d, want 2", len(infos))
+	}
+}
+
+// ────────────────────────── 10. AddManaged ──────────────────────────
+
+func TestAddManaged_Basic(t *testing.T) {
+	rp := NewRelayPool(WeightConfig{})
+	p1, p2 := newTestPid(t, 1), newTestPid(t, 2)
+
+	rp.AddManaged(p1)
+	rp.AddManaged(p2)
+
+	got := rp.ListManaged()
+	if len(got) != 2 {
+		t.Fatalf("ListManaged = %d, want 2", len(got))
+	}
+
+	rp.RemoveManaged(p1)
+	got = rp.ListManaged()
+	if len(got) != 1 {
+		t.Fatalf("after remove = %d, want 1", len(got))
+	}
+	if got[0] != p2 {
+		t.Errorf("remaining = %s, want %s", got[0].ShortString(), p2.ShortString())
+	}
+}
+
+func TestAddManaged_RemoveUnknown(t *testing.T) {
+	rp := NewRelayPool(WeightConfig{})
+	p1, p2 := newTestPid(t, 1), newTestPid(t, 2)
+	rp.AddManaged(p1)
+	rp.RemoveManaged(p2) // not added, should not panic
+	got := rp.ListManaged()
+	if len(got) != 1 {
+		t.Errorf("after remove unknown = %d, want 1", len(got))
+	}
+}
+
+// ────────────────────────── 11. IsCircuitOpen ──────────────────────────
+
+func TestIsCircuitOpen(t *testing.T) {
+	rp := NewRelayPool(WeightConfig{})
+	pid := newTestPid(t, 1)
+	rp.Add(testAddr(pid))
+
+	if rp.IsCircuitOpen(pid) {
+		t.Error("expected false for new relay")
+	}
+
+	for i := 0; i < 5; i++ {
+		rp.RecordResult(pid, errFailedErr())
+	}
+
+	if !rp.IsCircuitOpen(pid) {
+		t.Error("expected true after 5 consecutive failures")
+	}
+}
+
+func TestIsCircuitOpen_Unknown(t *testing.T) {
+	rp := NewRelayPool(WeightConfig{})
+	pid := newTestPid(t, 99)
+	if rp.IsCircuitOpen(pid) {
+		t.Error("expected false for unknown relay")
+	}
+}
+
 // ────────────────────────── Helpers ──────────────────────────
 
 func errFailedErr() error {

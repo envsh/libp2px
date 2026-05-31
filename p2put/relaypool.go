@@ -84,6 +84,7 @@ type RelayPool struct {
 	items     map[peer.ID]*RelayItem
 	config    WeightConfig
 	protected map[peer.ID]bool
+	managed   map[peer.ID]struct{}
 	lowWater  int
 	highWater int
 }
@@ -106,6 +107,7 @@ func NewRelayPool(cfg WeightConfig) *RelayPool {
 		items:     make(map[peer.ID]*RelayItem),
 		config:    cfg,
 		protected: make(map[peer.ID]bool),
+		managed:   make(map[peer.ID]struct{}),
 		lowWater:  poolLowWater,
 		highWater: poolHighWater,
 	}
@@ -157,6 +159,7 @@ func (p *RelayPool) Remove(pid peer.ID) {
 	p.mu.Lock()
 	delete(p.items, pid)
 	delete(p.protected, pid)
+	delete(p.managed, pid)
 	p.mu.Unlock()
 	log.Printf("[relaypool] removed %s", pid.ShortString())
 }
@@ -173,6 +176,44 @@ func (p *RelayPool) Unprotect(pid peer.ID) {
 	delete(p.protected, pid)
 	p.mu.Unlock()
 	log.Printf("[relaypool] unprotect %s", pid.ShortString())
+}
+
+func (p *RelayPool) AddManaged(pids ...peer.ID) {
+	p.mu.Lock()
+	for _, pid := range pids {
+		p.managed[pid] = struct{}{}
+	}
+	p.mu.Unlock()
+}
+
+func (p *RelayPool) RemoveManaged(pids ...peer.ID) {
+	p.mu.Lock()
+	for _, pid := range pids {
+		delete(p.managed, pid)
+	}
+	p.mu.Unlock()
+}
+
+func (p *RelayPool) ListManaged() []peer.ID {
+	p.mu.RLock()
+	out := make([]peer.ID, 0, len(p.managed))
+	for pid := range p.managed {
+		out = append(out, pid)
+	}
+	p.mu.RUnlock()
+	return out
+}
+
+func (p *RelayPool) IsCircuitOpen(pid peer.ID) bool {
+	p.mu.RLock()
+	item, ok := p.items[pid]
+	if !ok {
+		p.mu.RUnlock()
+		return false
+	}
+	open := item.circuitOpen
+	p.mu.RUnlock()
+	return open
 }
 
 // RecordResult updates a relay's score and tier based on the outcome.
@@ -297,6 +338,40 @@ func (p *RelayPool) Select() multiaddr.Multiaddr {
 		}
 	}
 	return selected
+}
+
+func (p *RelayPool) SelectN(n int) []peer.AddrInfo {
+	p.mu.RLock()
+
+	type scored struct {
+		pid   peer.ID
+		score float64
+		addr  multiaddr.Multiaddr
+	}
+	var entries []scored
+	for pid, item := range p.items {
+		if item.circuitOpen {
+			continue
+		}
+		entries = append(entries, scored{pid, p.calcScore(item), item.Addr})
+	}
+
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].score > entries[j].score
+	})
+	p.mu.RUnlock()
+
+	if n > len(entries) {
+		n = len(entries)
+	}
+	infos := make([]peer.AddrInfo, n)
+	for i := 0; i < n; i++ {
+		infos[i] = peer.AddrInfo{ID: entries[i].pid, Addrs: []multiaddr.Multiaddr{entries[i].addr}}
+	}
+	if n > 0 {
+		log.Printf("[relaypool] selectN %d/%d top=%s score=%.3f", n, len(entries), entries[0].pid.ShortString(), entries[0].score)
+	}
+	return infos
 }
 
 func (p *RelayPool) SetWeights(w WeightConfig) {

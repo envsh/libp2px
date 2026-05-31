@@ -448,6 +448,7 @@ func reconnectFromPeerDB(ctx context.Context) {
 			log.Printf("[peerdb] ping %s: %v", r.PeerID.ShortString(), res.Error)
 		} else {
 			log.Printf("[peerdb] ping %s RTT: %s", r.PeerID.ShortString(), res.RTT)
+			bootres.PeerDB.Update(r.PeerID, r.Addrs)
 		}
 
 		select {

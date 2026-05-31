@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"time"
+	"strings"
 
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/host"
@@ -230,7 +231,14 @@ func PushToPeer(ctx context.Context, pid peer.ID) error {
 		return err
 	}
 
-	log.Printf("[push] got %d peers from %s", len(resp.Peers), pid.ShortString())
+	ids := []string{}
+	for _, p := range resp.Peers {
+		rpid, err := peer.Decode(p.ID)
+		_ = err
+		ids = append(ids, strings.Split(rpid.ShortString(), " ")[1])
+	}
+	log.Printf("[push] got %d peers from %s, ids %v", len(resp.Peers), pid.ShortString(), ids)
+
 	for _, p := range resp.Peers {
 		rpid, err := peer.Decode(p.ID)
 		if err != nil {

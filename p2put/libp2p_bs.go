@@ -324,10 +324,20 @@ func Bootstrap(ctx context.Context, cfg Config) (*BootNode, error) {
 		return nil, fmt.Errorf("create libp2p host: %w", err)
 	}
 
+	rp := NewRelayPool(WeightConfig{})
+	for _, r := range staticRelays {
+		rp.Add(r.Addrs[0].String() + "/p2p/" + r.ID.String())
+		rp.Protect(r.ID)
+	}
+
 	for _, r := range staticRelays {
 		h.ConnManager().Protect(r.ID, "relay")
 	}
-	go watchStaticRelays(context.Background(), h, staticRelays)
+	if false {
+		go watchStaticRelays(context.Background(), h, staticRelays)
+	}else {
+		go relayPoolManager(context.Background(), h, rp, 3)
+	}
 
 	myID := h.ID()
 	fmt.Printf("[+] Host created, Peer ID: %s\n", myID.String())
@@ -347,15 +357,9 @@ func Bootstrap(ctx context.Context, cfg Config) (*BootNode, error) {
 		AddrMgr:   NewAddrManager(),
 		PubkeyHex: pubHex,
 		BootTime:  time.Since(start),
+		RelayPool: rp,
 		// Discovery: routingDiscovery,
 	}
-
-	rp := NewRelayPool(WeightConfig{})
-	for _, r := range staticRelays {
-		rp.Add(r.Addrs[0].String() + "/p2p/" + r.ID.String())
-		rp.Protect(r.ID)
-	}
-	bsres.RelayPool = rp
 
 	if !currConfig.IsMobile {
 		bsres.bootDHT(ctx)
@@ -950,6 +954,101 @@ func watchStaticRelays(ctx context.Context, h host.Host, relays []peer.AddrInfo)
 			return
 		}
 	}
+}
+
+func relayPoolManager(ctx context.Context, h host.Host, rp *RelayPool, k int) {
+	initial := rp.SelectN(k)
+	rp.AddManaged(pidsFromAddrs(initial)...)
+	for _, ai := range initial {
+		doRelayReserve(ctx, h, rp, ai)
+	}
+
+	ticker := time.NewTicker(60 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			if rp == nil {
+				continue
+			}
+
+			var toRemove []peer.ID
+			for _, pid := range rp.ListManaged() {
+				if h.Network().Connectedness(pid) != network.Connected {
+					toRemove = append(toRemove, pid)
+					continue
+				}
+				if rp.IsCircuitOpen(pid) {
+					h.Network().ClosePeer(pid)
+					toRemove = append(toRemove, pid)
+					continue
+				}
+				cctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+				res, err := client.Reserve(cctx, h, peer.AddrInfo{ID: pid})
+				cancel()
+				if err != nil {
+					log.Printf("[relaypool] reserve %s: %v", pid.ShortString(), err)
+					rp.RecordResult(pid, err)
+				} else {
+					if bootres != nil {
+						bootres.AddrMgr.SetRelayVouch(pid, res.Addrs, res.Expiration)
+					}
+					rp.SetReservationTTL(pid, res.Expiration)
+					rp.RecordResult(pid, nil)
+				}
+			}
+			rp.RemoveManaged(toRemove...)
+
+			if len(rp.ListManaged()) < k {
+				need := k - len(rp.ListManaged())
+				for _, ai := range rp.SelectN(need) {
+					if h.Network().Connectedness(ai.ID) == network.Connected {
+						continue
+					}
+					rp.AddManaged(ai.ID)
+					doRelayReserve(ctx, h, rp, ai)
+				}
+			}
+
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+func doRelayReserve(ctx context.Context, h host.Host, rp *RelayPool, ai peer.AddrInfo) {
+	log.Printf("[relaypool] connecting %s", ai.ID.ShortString())
+	if err := h.Connect(ctx, ai); err != nil {
+		log.Printf("[relaypool] connect %s: %v", ai.ID.ShortString(), err)
+		rp.RecordResult(ai.ID, err)
+		return
+	}
+	rp.RecordResult(ai.ID, nil)
+
+	cctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	res, err := client.Reserve(cctx, h, ai)
+	if err != nil {
+		log.Printf("[relaypool] reserve %s: %v", ai.ID.ShortString(), err)
+		rp.RecordResult(ai.ID, err)
+	} else {
+		log.Printf("[relaypool] reserved %s, expires %s",
+			ai.ID.ShortString(), res.Expiration.Format(time.TimeOnly))
+		if bootres != nil {
+			bootres.AddrMgr.SetRelayVouch(ai.ID, res.Addrs, res.Expiration)
+		}
+		rp.SetReservationTTL(ai.ID, res.Expiration)
+		rp.RecordResult(ai.ID, nil)
+	}
+}
+
+func pidsFromAddrs(infos []peer.AddrInfo) []peer.ID {
+	pids := make([]peer.ID, len(infos))
+	for i, ai := range infos {
+		pids[i] = ai.ID
+	}
+	return pids
 }
 
 func mergeAddrs(existing, incoming []multiaddr.Multiaddr) []multiaddr.Multiaddr {

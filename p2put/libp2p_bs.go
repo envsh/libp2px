@@ -209,7 +209,6 @@ func mainLibp2p(cfg Config) {
 	replayProtocols()
 
 	res.PeerDB = NewPeerDB(600 * time.Minute)
-	NewPeerGossip(res.Host, res.PSO, res.PeerDB, currConfig.HubName).Start(context.Background())
 	if currConfig.IsMobile {
 		go AdvertiseHTTP(context.Background())
 		go discoveryV4(context.Background())
@@ -222,6 +221,9 @@ func mainLibp2p(cfg Config) {
 	for _, topic := range currConfig.Topics {
 		if len(topic) <= 0 { continue }
 		getOrSubscribeTopic(topic)
+	}
+	if currConfig.HubName != "" {
+		getOrSubscribeTopic(currConfig.HubName)
 	}
 
 	go func() {

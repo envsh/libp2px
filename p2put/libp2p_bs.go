@@ -12,10 +12,10 @@ import (
 	"fmt"
 	"hash/fnv"
 	// "math/rand"
-	"reflect"
+	"log"
 	"net"
 	"os"
-	"log"
+	"reflect"
 	"strings"
 	// "slices"
 	// "maps"
@@ -24,32 +24,31 @@ import (
 
 	"github.com/envsh/toxera/fedkey"
 	"github.com/libp2p/go-libp2p"
+	dht "github.com/libp2p/go-libp2p-kad-dht"
+	"github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/crypto"
+	discovery2 "github.com/libp2p/go-libp2p/core/discovery"
 	"github.com/libp2p/go-libp2p/core/event"
 	"github.com/libp2p/go-libp2p/core/host"
+	"github.com/libp2p/go-libp2p/core/metrics"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/peerstore"
 	"github.com/libp2p/go-libp2p/core/protocol"
-	discovery2 "github.com/libp2p/go-libp2p/core/discovery"
 	"github.com/libp2p/go-libp2p/p2p/discovery/routing"
+	discovery "github.com/libp2p/go-libp2p/p2p/discovery/util"
 	"github.com/libp2p/go-libp2p/p2p/host/autorelay"
+	"github.com/libp2p/go-libp2p/p2p/net/connmgr"
 	"github.com/libp2p/go-libp2p/p2p/protocol/circuitv2/client"
-	"github.com/libp2p/go-libp2p/core/metrics"
 	"github.com/libp2p/go-libp2p/p2p/protocol/ping"
 	"github.com/libp2p/go-libp2p/p2p/transport/tcp"
 	"github.com/libp2p/go-libp2p/p2p/transport/websocket"
-	discovery "github.com/libp2p/go-libp2p/p2p/discovery/util"
-	"github.com/libp2p/go-libp2p/p2p/net/connmgr"
-	dht "github.com/libp2p/go-libp2p-kad-dht"
-	"github.com/libp2p/go-libp2p-pubsub"
 	"github.com/multiformats/go-multiaddr"
 )
 
 ////////////
 
 type Libp2p struct {
-
 }
 
 // var _ = regme(&Libp2p{})
@@ -72,14 +71,13 @@ func MainLibp2p(cfg Config) {
 
 //////
 
-
 const (
 	defaultListenPort = 4001
 	p2pServiceNode    = 1
 	p2pServiceChat    = 1 << 24
 
-	IpfsPingProtocl = "/ipfs/ping/1.0.0"
-	IpfsIdProtocol = "/ipfs/id/1.0.0"
+	IpfsPingProtocl   = "/ipfs/ping/1.0.0"
+	IpfsIdProtocol    = "/ipfs/id/1.0.0"
 	RelayHopProtocol  = protocol.ID("/libp2p/circuit/relay/0.2.0/hop")
 	RelayStopProtocol = protocol.ID("/libp2p/circuit/relay/0.2.0/stop")
 
@@ -92,7 +90,6 @@ type Libp2pAddrInfo struct {
 	IsPrivateIP bool
 	IP          net.IP
 }
-
 
 var libp2pBootstrap = []string{
 	"/dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN",
@@ -130,7 +127,7 @@ type BootNode struct {
 
 // 缓存文件格式: map[string][]string (原始地址 → 解析后的地址列表)
 var dnsaddrsResultFile = "/tmp/libp2p_bootstrap_dnsaddrs.json"
-var dnsaddrsCacheDur = 4*3600*time.Second
+var dnsaddrsCacheDur = 4 * 3600 * time.Second
 
 func loadOrResolveAllDNSAddrs() {
 	if data, err := os.ReadFile(dnsaddrsResultFile); err == nil {
@@ -160,7 +157,9 @@ func loadOrResolveAllDNSAddrs() {
 
 	if data, err := json.Marshal(resolved); err == nil {
 		err = os.WriteFile(dnsaddrsResultFile, data, 0644)
-		if err != nil { panic(err) }
+		if err != nil {
+			panic(err)
+		}
 	}
 
 	for _, addrs := range resolved {
@@ -230,7 +229,9 @@ func mainLibp2p(cfg Config) {
 	}
 
 	for _, topic := range currConfig.Topics {
-		if len(topic) <= 0 { continue }
+		if len(topic) <= 0 {
+			continue
+		}
 		getOrSubscribeTopic(topic)
 	}
 	if currConfig.HubName != "" {
@@ -345,7 +346,7 @@ func Bootstrap(ctx context.Context, cfg Config) (*BootNode, error) {
 	}
 	if false {
 		go watchStaticRelays(context.Background(), h, staticRelays)
-	}else {
+	} else {
 		go relayPoolManager(context.Background(), h, bootres.RelayPool, 3)
 	}
 
@@ -358,8 +359,8 @@ func Bootstrap(ctx context.Context, cfg Config) (*BootNode, error) {
 	fmt.Println()
 
 	// dht
-	bsres := &BootNode {
-		Host:      h,
+	bsres := &BootNode{
+		Host: h,
 		// DHT:       kadDHT,
 		// PSO:       pso,
 		PeerID:    myID,
@@ -409,7 +410,9 @@ func Bootstrap(ctx context.Context, cfg Config) (*BootNode, error) {
 			30*time.Second,
 		),
 	)
-	if err != nil { log.Println(err) }
+	if err != nil {
+		log.Println(err)
+	}
 
 	log.Println("bootstrap ret...")
 	bsres.PSO = pso
@@ -440,8 +443,8 @@ func (bsres *BootNode) bootDHT(ctx context.Context) (any, error) {
 		dht.Mode(dht.ModeClient),
 		dht.BootstrapPeers(bootstrapInfos...),
 		// dht.DisableAutoRefresh(),
-		dht.Concurrency(3),                   // ← 并发从 10 降到 3
-		dht.RoutingTableRefreshPeriod(5 * time.Minute),  // ← 再加这行, 默认10min
+		dht.Concurrency(3), // ← 并发从 10 降到 3
+		dht.RoutingTableRefreshPeriod(5*time.Minute), // ← 再加这行, 默认10min
 	)
 	if err != nil {
 		return nil, fmt.Errorf("create DHT: %w", err)
@@ -453,12 +456,12 @@ func (bsres *BootNode) bootDHT(ctx context.Context) (any, error) {
 	}
 	errch := kadDHT.RefreshRoutingTable()
 	btime := time.Now()
-	<- errch
+	<-errch
 
 	log.Println("[*] Waiting DHT routing table online...", time.Since(btime))
 	routingDiscovery := routing.NewRoutingDiscovery(kadDHT)
-	testCID := currConfig.HubName // "libp2p-bootstrap-test"
-	rettl := discovery2.TTL(10*time.Minute) // 3h
+	testCID := currConfig.HubName                              // "libp2p-bootstrap-test"
+	rettl := discovery2.TTL(10 * time.Minute)                  // 3h
 	discovery.Advertise(ctx, routingDiscovery, testCID, rettl) // broadcast self
 
 	if false {
@@ -471,17 +474,16 @@ func (bsres *BootNode) bootDHT(ctx context.Context) (any, error) {
 	return nil, nil
 }
 
-
 // only find HubName
 func (bootres *BootNode) myDiscoveryV3() {
 	rd := bootres.Discovery
 	// dht := bootres.DHT
 	tag := currConfig.HubName
-	sec100 := 120*time.Second
+	sec100 := 120 * time.Second
 	known := make(map[string]peer.AddrInfo)
 
-	for i := 0 ;; i++{
-		time.Sleep(3*time.Second)
+	for i := 0; ; i++ {
+		time.Sleep(3 * time.Second)
 		log.Println("start DHT finding...", i)
 		result := findAndConnect(tag, rd, 0)
 		validcnt := 0
@@ -491,18 +493,18 @@ func (bootres *BootNode) myDiscoveryV3() {
 				if _, ok := known[p.ID.String()]; !ok {
 					known[p.ID.String()] = p
 				}
-			}else{
+			} else {
 				known[p.ID.String()] = p
 				validcnt += 1
 			}
-			if len(known[p.ID.String()].Addrs) == 0{
+			if len(known[p.ID.String()].Addrs) == 0 {
 				ps := bootres.Host.Peerstore()
 				p.Addrs = ps.Addrs(p.ID)
 			}
 		}
 		log.Println("found peers count:", len(known), "valid", validcnt, "round", i)
 		if i < 3 && len(result) == 0 {
-			time.Sleep(time.Duration(2+i)*time.Second)
+			time.Sleep(time.Duration(2+i) * time.Second)
 			continue
 		}
 
@@ -515,19 +517,19 @@ func (bootres *BootNode) myDiscoveryV3() {
 		ctx2, cancel2 := context.WithTimeout(ctx1, 3*time.Second)
 
 		// 替代 RefreshRoutingTable()
-        // 轻量：只更新自己的路由信息
-        bootres.DHT.FindPeer(ctx2, bootres.PeerID)
+		// 轻量：只更新自己的路由信息
+		bootres.DHT.FindPeer(ctx2, bootres.PeerID)
 		// bootres.DHT.Provide(context.Background(), currConfig.HubName, true)
 
-        // 或
-        // bootres.DHT.GetClosestPeers(ctx, bootres.PeerID.String())
+		// 或
+		// bootres.DHT.GetClosestPeers(ctx, bootres.PeerID.String())
 		cancel2()
 
-		bootres.DHT.GetClosestPeers(context.Background(),bootres.PeerID.String())
+		bootres.DHT.GetClosestPeers(context.Background(), bootres.PeerID.String())
 		if dur > sec100 {
 			continue
 		}
-	    time.Sleep(sec100-dur)
+		time.Sleep(sec100 - dur)
 	}
 }
 
@@ -573,15 +575,17 @@ func myDiscoveryV2ddd() {
 func findAndConnect(tag string, rd *routing.RoutingDiscovery, limit int) []peer.AddrInfo {
 	findCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-    // 连接够多了，不查
-    if len(bootres.Host.Network().Conns()) > 9 {
-        // return
-    }
+	// 连接够多了，不查
+	if len(bootres.Host.Network().Conns()) > 9 {
+		// return
+	}
 
-	if limit <= 0 { limit = 5 }
+	if limit <= 0 {
+		limit = 5
+	}
 	peerChan, err := rd.FindPeers(findCtx, tag,
-				discovery2.Limit(limit),          // ← 只取 10 个结果
-			)
+		discovery2.Limit(limit), // ← 只取 10 个结果
+	)
 	if err != nil {
 		return nil
 	}
@@ -594,11 +598,13 @@ func findAndConnect(tag string, rd *routing.RoutingDiscovery, limit int) []peer.
 		op := foundm[p.ID.String()]
 		p.Addrs = append(p.Addrs, op.Addrs...)
 		foundm[p.ID.String()] = p
-		if true { continue }
+		if true {
+			continue
+		}
 
 		if bootres.Host.Network().Connectedness(p.ID) != network.Connected {
-            // 每连一个前再检查一次，防止批量连
-            // if len(bootres.Host.Network().Conns()) > 12 { break }
+			// 每连一个前再检查一次，防止批量连
+			// if len(bootres.Host.Network().Conns()) > 12 { break }
 
 			// 每两个连接之间间隔 2s
 			time.Sleep(3 * time.Second)
@@ -644,7 +650,7 @@ func tryConnect(p peer.AddrInfo) error {
 	return err
 }
 
-func myDiscoveryV1 (bootCtx context.Context, routingDiscovery *routing.RoutingDiscovery, testCID string, myID peer.ID) (discoveredSet map[peer.ID]struct{}) {
+func myDiscoveryV1(bootCtx context.Context, routingDiscovery *routing.RoutingDiscovery, testCID string, myID peer.ID) (discoveredSet map[peer.ID]struct{}) {
 	findCtx, findCancel := context.WithTimeout(bootCtx, 10*time.Second)
 	defer findCancel()
 	peerChan, err := routingDiscovery.FindPeers(findCtx, testCID)
@@ -665,7 +671,9 @@ func myDiscoveryV1 (bootCtx context.Context, routingDiscovery *routing.RoutingDi
 func myEventSuber(h host.Host, evts ...any) {
 	// sub, err := h.EventBus().Subscribe(new(event.EvtLocalReachabilityChanged))
 	sub, err := h.EventBus().Subscribe(evts)
-	if err != nil { panic(err) }
+	if err != nil {
+		panic(err)
+	}
 	go func() {
 		for evt := range sub.Out() {
 			evname := reflect.TypeOf(evt).String()
@@ -699,20 +707,18 @@ func myEventSuber(h host.Host, evts ...any) {
 					log.Printf("[limited-px] %s push/1.0=%s conn=%s protocols=%v", e.Peer.ShortString(), support, h.Network().Connectedness(e.Peer), protocols)
 				}
 			case event.EvtLocalAddressesUpdated:
-				if bootres != nil {
-					var curAddrs, relayCircuits []multiaddr.Multiaddr
-					for _, ua := range e.Current {
-						curAddrs = append(curAddrs, ua.Address)
-					}
-					bootres.AddrMgr.SetLocal(mergeAddrs(nil, curAddrs))
-
-					for _, ua := range e.Removed {
-						if isRelayAddr(ua.Address) {
-							relayCircuits = append(relayCircuits, ua.Address)
-						}
-					}
-					bootres.AddrMgr.SetRelayCircuit(mergeAddrs(nil, relayCircuits))
+				var curAddrs, relayCircuits []multiaddr.Multiaddr
+				for _, ua := range e.Current {
+					curAddrs = append(curAddrs, ua.Address)
 				}
+				bootres.AddrMgr.SetLocal(mergeAddrs(nil, curAddrs))
+
+				for _, ua := range e.Removed {
+					if isRelayAddr(ua.Address) {
+						relayCircuits = append(relayCircuits, ua.Address)
+					}
+				}
+				bootres.AddrMgr.SetRelayCircuit(mergeAddrs(nil, relayCircuits))
 				log.Println(evname, "collected addrs", len(e.Current))
 				if e.SignedPeerRecord != nil {
 					pr := &peer.PeerRecord{}
@@ -720,7 +726,7 @@ func myEventSuber(h host.Host, evts ...any) {
 						// log.Printf("[addrs] signed record: seq=%d addrs=%v", pr.Seq, pr.Addrs)
 					}
 				}
-				go func(){
+				go func() {
 					// bootres.DHT.RefreshRoutingTable()
 					// discovery.Advertise(context.Background(), bootres.Discovery, currConfig.HubName)
 				}()
@@ -754,7 +760,7 @@ func myEventSuber(h host.Host, evts ...any) {
 				log.Printf("[limited-px] %s push/1.0=%s conn=%s (ident)",
 					e.Peer.ShortString(), support, h.Network().Connectedness(e.Peer))
 				// pushx := support=="Y" && h.Network().Connectedness(e.Peer) == network.Limited
-				pushx := support=="Y"
+				pushx := support == "Y"
 				if pushx {
 					go func() {
 						btime := time.Now()
@@ -782,7 +788,7 @@ func myDumpBoot(h host.Host, dht *dht.IpfsDHT) {
 	log.Println()
 }
 
-func GetCurrConns (h host.Host) (discoveredSet map[peer.ID]struct{}) {
+func GetCurrConns(h host.Host) (discoveredSet map[peer.ID]struct{}) {
 	discoveredSet = make(map[peer.ID]struct{})
 	for _, conn := range h.Network().Conns() {
 		discoveredSet[conn.RemotePeer()] = struct{}{}
@@ -910,7 +916,7 @@ func watchStaticRelays(ctx context.Context, h host.Host, relays []peer.AddrInfo)
 					pctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 					res := <-ping.Ping(pctx, h, r.ID)
 					cancel()
-					if bootres != nil && bootres.RelayPool != nil {
+					if bootres.RelayPool != nil {
 						if res.Error != nil {
 							bootres.RelayPool.RecordResult(r.ID, res.Error)
 						} else {
@@ -918,7 +924,7 @@ func watchStaticRelays(ctx context.Context, h host.Host, relays []peer.AddrInfo)
 						}
 					}
 				}
-				if bootres != nil && bootres.RelayPool != nil {
+				if bootres.RelayPool != nil {
 					if maddr := bootres.RelayPool.Select(); maddr != nil {
 						log.Printf("[relaypool] select: %s", maddr.String())
 					}
@@ -942,18 +948,16 @@ func watchStaticRelays(ctx context.Context, h host.Host, relays []peer.AddrInfo)
 					cancel()
 					if err != nil {
 						log.Printf("[relay] reserve %s: %v", r.ID.ShortString(), err)
-						if bootres != nil && bootres.RelayPool != nil {
+						if bootres.RelayPool != nil {
 							bootres.RelayPool.RecordResult(r.ID, err)
 						}
 					} else {
 						log.Printf("[relay] reserved from %s, expires %s, addrs: %v",
 							r.ID.ShortString(), res.Expiration.Format(time.TimeOnly), res.Addrs)
-						if bootres != nil {
-							bootres.AddrMgr.SetRelayVouch(r.ID, res.Addrs, res.Expiration)
-							if bootres.RelayPool != nil {
-								bootres.RelayPool.SetReservationTTL(r.ID, res.Expiration)
-								bootres.RelayPool.RecordResult(r.ID, nil)
-							}
+						bootres.AddrMgr.SetRelayVouch(r.ID, res.Addrs, res.Expiration)
+						if bootres.RelayPool != nil {
+							bootres.RelayPool.SetReservationTTL(r.ID, res.Expiration)
+							bootres.RelayPool.RecordResult(r.ID, nil)
 						}
 					}
 				}
@@ -999,9 +1003,7 @@ func relayPoolManager(ctx context.Context, h host.Host, rp *RelayPool, k int) {
 					log.Printf("[relaypool] reserve %s: %v", pid.ShortString(), err)
 					rp.RecordResult(pid, err)
 				} else {
-					if bootres != nil {
-						bootres.AddrMgr.SetRelayVouch(pid, res.Addrs, res.Expiration)
-					}
+					bootres.AddrMgr.SetRelayVouch(pid, res.Addrs, res.Expiration)
 					rp.SetReservationTTL(pid, res.Expiration)
 					rp.RecordResult(pid, nil)
 				}
@@ -1043,9 +1045,7 @@ func doRelayReserve(ctx context.Context, h host.Host, rp *RelayPool, ai peer.Add
 	} else {
 		log.Printf("[relaypool] reserved %s, expires %s",
 			ai.ID.ShortString(), res.Expiration.Format(time.TimeOnly))
-		if bootres != nil {
-			bootres.AddrMgr.SetRelayVouch(ai.ID, res.Addrs, res.Expiration)
-		}
+		bootres.AddrMgr.SetRelayVouch(ai.ID, res.Addrs, res.Expiration)
 		rp.SetReservationTTL(ai.ID, res.Expiration)
 		rp.RecordResult(ai.ID, nil)
 	}

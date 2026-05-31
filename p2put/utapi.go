@@ -15,12 +15,12 @@ import (
 
 	"github.com/ipfs/go-cid"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
+	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	discovery2 "github.com/libp2p/go-libp2p/core/discovery"
 	"github.com/libp2p/go-libp2p/core/metrics"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/routing"
-	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/multiformats/go-multihash"
 )
@@ -144,11 +144,11 @@ func getOrSubscribeTopic(topic string) (*pubsub.Topic, error) {
 }
 
 func substr(s string, maxRunes int) string {
-    runes := []rune(s)
-    if len(runes) > maxRunes {
-        runes = runes[:maxRunes]
-    }
-    return string(runes)
+	runes := []rune(s)
+	if len(runes) > maxRunes {
+		runes = runes[:maxRunes]
+	}
+	return string(runes)
 }
 
 func topicListener(sub *pubsub.Subscription, topic string) {
@@ -216,7 +216,7 @@ type BoardResp struct {
 	PeerID    string         `json:"peer_id"`
 	Pubkey    string         `json:"pubkey"`
 	NATStatus string         `json:"nat_status"`
-	MyAddrs   []AddrResp          `json:"my_addrs"`
+	MyAddrs   []AddrResp     `json:"my_addrs"`
 	Relays0   int            `json:"relays0"`
 	Relays1   int            `json:"relays1"`
 	Conns     int            `json:"connections"`
@@ -266,10 +266,10 @@ type ConnResp struct {
 }
 
 type DHTResp struct {
-	ClusterSize int `json:"cluster_size"`
-	Topics []string `json:"topics"`
+	ClusterSize int      `json:"cluster_size"`
+	Topics      []string `json:"topics"`
 	PeerCount   int      `json:"peer_count"`
-	Peers  []string `json:"peers"`
+	Peers       []string `json:"peers"`
 }
 
 type StorePeerEntry struct {
@@ -284,10 +284,11 @@ type TopicEntry struct {
 	IsTag      bool     `json:"is_tag"`
 }
 
-type NoopValidator struct {}
+type NoopValidator struct{}
+
 func (NoopValidator) Validate(key string, value []byte) error { return nil }
 func (NoopValidator) Select(key string, values [][]byte) (int, error) {
-	return len(values)-1, nil
+	return len(values) - 1, nil
 }
 
 type FoundPeer struct {
@@ -383,7 +384,7 @@ func IsPeerConnected(pid any, out bool) bool {
 	}
 	for _, c := range bootres.Host.Network().Conns() {
 		if c.RemotePeer() == p {
-			if out &&  c.Stat().Direction == network.DirOutbound {
+			if out && c.Stat().Direction == network.DirOutbound {
 				return true
 			}
 		}
@@ -435,14 +436,13 @@ func PutKV(ctx context.Context, key string, value []byte) error {
 
 	// not support put custom key, opendht does
 	// {"error":"create temp dht: protocol prefix /ipfs must have exactly two namespaced validators - /pk and /ipns"}
-	tempDHT, err := dht.New(ctx, bootres.Host, dht.Mode(dht.ModeClient),
-		// dht.ProtocolPrefix("/mychat"),
-		// dht.Validator(record.NamespacedValidator{
-		// 	"kv": NoopValidator{},
-		// 	"pk": record.PublicKeyValidator{},
-		// 	"ipns": ipns.PublicKeyValidator{},
-		// })
-	)
+	tempDHT, err := dht.New(ctx, bootres.Host, dht.Mode(dht.ModeClient))// dht.ProtocolPrefix("/mychat"),
+	// dht.Validator(record.NamespacedValidator{
+	// 	"kv": NoopValidator{},
+	// 	"pk": record.PublicKeyValidator{},
+	// 	"ipns": ipns.PublicKeyValidator{},
+	// })
+
 	if err != nil {
 		return fmt.Errorf("create temp dht: %w", err)
 	}
@@ -467,7 +467,7 @@ func PutKV(ctx context.Context, key string, value []byte) error {
 	defer cancel()
 	// mh, _ := multihash.Sum([]byte(key), multihash.SHA2_256, -1)
 	// key = "/ipns/"+key // pk
-	key2 := "/pk/"+key
+	key2 := "/pk/" + key
 	println(key2)
 	if err := tempDHT.PutValue(putCtx, key2, value); err != nil {
 		return fmt.Errorf("put value: %w", err)
@@ -575,9 +575,9 @@ func CollectBoard() (BoardResp, error) {
 		PeerID:    h.ID().String(),
 		Pubkey:    bootres.PubkeyHex,
 		NATStatus: bootres.NATStatus.String(),
-		MyAddrs:    addrs,
-		Relays0:    len(relays.Candidates),
-		Relays1:    len(relays.Connected),
+		MyAddrs:   addrs,
+		Relays0:   len(relays.Candidates),
+		Relays1:   len(relays.Connected),
 		Conns:     len(conns),
 		Bandwidth: bw,
 		Resources: res,
@@ -639,9 +639,9 @@ func CollectDHT() (DHTResp, error) {
 	log.Println(topics)
 
 	return DHTResp{
-		PeerCount:  rt.Size(),
-		Peers: strs,
-		Topics: topics,
+		PeerCount: rt.Size(),
+		Peers:     strs,
+		Topics:    topics,
 	}, nil
 }
 

@@ -40,7 +40,7 @@ func IsOnline() bool {
 }
 
 func SetOnOfflineChange(fn func(state OfflineState, reason string)) {
-	if bootres != nil && bootres.OfflineDetector != nil {
+	if bootres.OfflineDetector != nil {
 		bootres.OfflineDetector.OnChange = fn
 	}
 }

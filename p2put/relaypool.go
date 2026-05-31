@@ -35,12 +35,12 @@ const (
 )
 
 type WeightConfig struct {
-	Success        float64
-	Latency        float64
-	DataLimit      float64
-	DurationLimit  float64
-	TTL            float64
-	Uptime         float64
+	Success       float64
+	Latency       float64
+	DataLimit     float64
+	DurationLimit float64
+	TTL           float64
+	Uptime        float64
 }
 
 var defaultWeights = WeightConfig{
@@ -56,8 +56,8 @@ var defaultWeights = WeightConfig{
 // Each item lives in one of two tiers: probation (new, unproven) or main (proven via successful push).
 // Probation uses FIFO eviction; main uses score-based eviction with protection rounds.
 type RelayItem struct {
-	PeerID             peer.ID
-	Addr               multiaddr.Multiaddr
+	PeerID peer.ID
+	Addr   multiaddr.Multiaddr
 
 	// inMain is true after the first successful RecordResult (promotion from probation).
 	// Set to false after demoteThreshold consecutive failures (demotion back to probation).
@@ -217,10 +217,11 @@ func (p *RelayPool) IsCircuitOpen(pid peer.ID) bool {
 }
 
 // RecordResult updates a relay's score and tier based on the outcome.
-//   errOK:           promotion (probation → main) if not already inMain
-//   errRateLimited:  score decay with higher penalty (α=0.5)
-//   errFailed:       demotion (main → probation) after demoteThreshold consecutive failures
-//                     or circuit breaker at 5 consecutive failures
+//
+//	errOK:           promotion (probation → main) if not already inMain
+//	errRateLimited:  score decay with higher penalty (α=0.5)
+//	errFailed:       demotion (main → probation) after demoteThreshold consecutive failures
+//	                  or circuit breaker at 5 consecutive failures
 func (p *RelayPool) RecordResult(pid peer.ID, err error) {
 	p.mu.Lock()
 	item, ok := p.items[pid]
@@ -502,10 +503,10 @@ func (p *RelayPool) calcScore(item *RelayItem) float64 {
 // Eviction is split: need/2 from probation (FIFO), need/2 from main (protection rounds + lowest score).
 // If one tier has fewer items than its quota, the other tier makes up the difference.
 // Protection rounds for main items (applied in order):
-//   1. Recent activity: lastResult within 5 minutes → protected
-//   2. Top-20% by score → protected
-//   3. Top-10 by uptime (connectedSince) → protected
-//   4. Remaining candidates evicted by ascending score until quota is met
+//  1. Recent activity: lastResult within 5 minutes → protected
+//  2. Top-20% by score → protected
+//  3. Top-10 by uptime (connectedSince) → protected
+//  4. Remaining candidates evicted by ascending score until quota is met
 func (p *RelayPool) prune() {
 	p.mu.Lock()
 	defer p.mu.Unlock()

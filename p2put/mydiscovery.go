@@ -13,12 +13,12 @@ import (
 	"strings"
 	"time"
 
+	dht_pb "github.com/libp2p/go-libp2p-kad-dht/pb"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/p2p/protocol/ping"
-	dht_pb "github.com/libp2p/go-libp2p-kad-dht/pb"
 	"github.com/libp2p/go-msgio/protoio"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/multiformats/go-multibase"
@@ -27,7 +27,7 @@ import (
 var trackers = []string{
 	"https://delegated-ipfs.dev", // 0: GET only
 	"https://routing.lol",        // 1: PUT 500
-	"https://peers.pleb.bot",    // 2: PUT+GET
+	"https://peers.pleb.bot",     // 2: PUT+GET
 }
 
 const activeTracker = 2
@@ -55,8 +55,8 @@ func trackerURL() string { return trackers[activeTracker] }
 // Internal types for PUT request (IPIP-526 signed Bitswap format).
 type ipfsPutPayload struct {
 	Keys        []string `json:"Keys"`
-	Timestamp   int64 `json:"Timestamp"`
-	AdvisoryTTL int64 `json:"AdvisoryTTL,omitempty"`
+	Timestamp   int64    `json:"Timestamp"`
+	AdvisoryTTL int64    `json:"AdvisoryTTL,omitempty"`
 	ID          string   `json:"ID"`
 	Addrs       []string `json:"Addrs"`
 }
@@ -478,12 +478,12 @@ func DiscoveryV6(ctx context.Context) {
 
 	for i := 0; ; i++ {
 		if i == 0 {
-			interval = discoverInterval/3
+			interval = discoverInterval / 3
 		} else {
 			interval = discoverInterval
 		}
 		select {
-		case <- time.After(interval):
+		case <-time.After(interval):
 			if bootres == nil || bootres.Host == nil {
 				continue
 			}
@@ -501,7 +501,10 @@ func DiscoveryV6(ctx context.Context) {
 
 			myID := bootres.Host.ID()
 			for n, p := range peers {
-				if n%3==1 { time.Sleep(1*time.Second); continue }
+				if n%3 == 1 {
+					time.Sleep(1 * time.Second)
+					continue
+				}
 				pid, err := peer.Decode(p.PeerID)
 				if err != nil {
 					continue
@@ -547,7 +550,7 @@ func DiscoveryV6(ctx context.Context) {
 				time.Sleep(5 * time.Second)
 			}
 
-			time.Sleep(discoverInterval/2)
+			time.Sleep(discoverInterval / 2)
 		case <-ctx.Done():
 			return
 		}
@@ -643,9 +646,11 @@ func rawFindNode(ctx context.Context, h host.Host, target peer.ID, queryPeer pee
 
 	found := false
 	for _, cp := range closer {
-		if cp == nil { continue }
+		if cp == nil {
+			continue
+		}
 		// log.Printf("[rawFindNode] closer: %s addrs=%d",
-			// cp.ID.ShortString(), len(cp.Addrs))
+		// cp.ID.ShortString(), len(cp.Addrs))
 		if cp.ID == target && len(cp.Addrs) > 0 {
 			found = true
 			//log.Printf("[rawFindNode] target %s FOUND in closer peers, connecting",

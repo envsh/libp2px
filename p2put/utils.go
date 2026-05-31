@@ -1,12 +1,12 @@
 package p2put
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net"
-	"time"
-	"context"
 	"strings"
+	"time"
 
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/network"
@@ -96,7 +96,6 @@ func extractRelayPeerID(addr multiaddr.Multiaddr) (peer.ID, error) {
 	return peer.Decode(pidStr)
 }
 
-
 func collectListeningAddrs(h host.Host) []Libp2pAddrInfo {
 	var addrs []Libp2pAddrInfo
 
@@ -165,10 +164,14 @@ func myAddrsFactory(addrs []multiaddr.Multiaddr) []multiaddr.Multiaddr {
 			ip4 := false
 			tcp := false
 			ip := extractIPFromAddr(a)
-			islo := ip!=nil && ip.IsLoopback()
+			islo := ip != nil && ip.IsLoopback()
 			for _, p := range a.Protocols() {
-				if p.Code == multiaddr.P_IP4 { ip4 = true }
-				if p.Code == multiaddr.P_TCP { tcp = true }
+				if p.Code == multiaddr.P_IP4 {
+					ip4 = true
+				}
+				if p.Code == multiaddr.P_TCP {
+					tcp = true
+				}
 			}
 			_, _ = ip4, tcp
 			// if ip4 && tcp && !islo {
@@ -294,7 +297,7 @@ func IsGoodPeerAddr(ai peer.AddrInfo) bool {
 	return false
 }
 
-func AllowLimitedConn(timeoutsec int, name string) (context.Context, func()){
+func AllowLimitedConn(timeoutsec int, name string) (context.Context, func()) {
 	if timeoutsec <= 0 {
 		timeoutsec = 999_999_999
 	}

@@ -285,4 +285,3 @@ func onStablePeers(w http.ResponseWriter, r *http.Request) {
 func onTopics(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, CollectTopics())
 }
-

@@ -31,7 +31,7 @@ func RegisterProtocol(name string, handler network.StreamHandler) error {
 		return fmt.Errorf("protocol %q already registered", pid)
 	}
 	registry[pid] = handler
-	if bootres != nil && bootres.Host != nil {
+	if bootres.Host != nil {
 		bootres.Host.SetStreamHandler(pid, handler)
 	}
 	return nil
@@ -48,7 +48,7 @@ func UnregisterProtocol(name string) {
 	regMu.Lock()
 	defer regMu.Unlock()
 	delete(registry, pid)
-	if bootres != nil && bootres.Host != nil {
+	if bootres.Host != nil {
 		bootres.Host.RemoveStreamHandler(pid)
 	}
 }

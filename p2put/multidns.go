@@ -2,13 +2,13 @@ package p2put
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
-	"fmt"
 
-	madns "github.com/multiformats/go-multiaddr-dns"
-	"github.com/multiformats/go-multiaddr"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/multiformats/go-multiaddr"
+	madns "github.com/multiformats/go-multiaddr-dns"
 )
 
 var resolvedBootstrapNodes []string

@@ -174,7 +174,7 @@ func CollectStablePeers() []StablePeerEntry {
 	tmp := make([]scored, 0, len(stablePeers))
 	for pid, si := range stablePeers {
 		var addrs []string
-		if bootres != nil && bootres.Host != nil {
+		if bootres.Host != nil {
 			ps := bootres.Host.Peerstore()
 			for _, a := range ps.Addrs(pid) {
 				s := a.String()

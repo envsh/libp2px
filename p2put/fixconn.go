@@ -9,20 +9,20 @@ package p2put
 // query peer info from connected cluster peers
 
 import (
-	"time"
 	"fmt"
 	"log"
 	"math/rand"
+	"time"
 	// "strings"
 	"context"
 
-	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/network"
+	"github.com/libp2p/go-libp2p/core/peer"
 )
 
 type connfixer struct {
-	known map[string]peer.AddrInfo
-	keys []string
+	known  map[string]peer.AddrInfo
+	keys   []string
 	maxdur time.Duration
 }
 
@@ -38,12 +38,12 @@ func newconnfixer(known map[string]peer.AddrInfo, maxdur time.Duration) *connfix
 	return fxr
 }
 func connByPeerID(pid peer.ID) network.Conn {
-    for _, c := range bootres.Host.Network().Conns() {
-        if c.RemotePeer() == pid {
-            return c
-        }
-    }
-    return nil
+	for _, c := range bootres.Host.Network().Conns() {
+		if c.RemotePeer() == pid {
+			return c
+		}
+	}
+	return nil
 }
 
 func (fxr *connfixer) dofix() {
@@ -54,13 +54,13 @@ func (fxr *connfixer) dofix() {
 
 	var err error
 	var p2 peer.AddrInfo
-	time.Sleep(3*time.Second)
+	time.Sleep(3 * time.Second)
 	// random select 3 and try connect
 	for j := 0; ; j++ {
 		if time.Since(btime) > sec100 {
 			break
 		}
-		time.Sleep(3*time.Second)
+		time.Sleep(3 * time.Second)
 		keys := []string{}
 		for k, _ := range known {
 			keys = append(keys, k)
@@ -94,7 +94,9 @@ func (fxr *connfixer) dofix() {
 				// err = fxr.connect_relay(p.ID)
 				fxr.connect_direct(p)
 			}
-			if currConfig.IsMobile { break }
+			if currConfig.IsMobile {
+				break
+			}
 
 			// udp heavy
 			time.Sleep(time.Second)
@@ -105,13 +107,13 @@ func (fxr *connfixer) dofix() {
 			_ = addrinfo
 			log.Println("(UDP) dht.FindPeer'ed ...", time.Since(t1), p2.ID.ShortString(), addrinfo, err)
 			if err != nil {
-			}else{
+			} else {
 				tryConnect(addrinfo)
 			}
 			break
 		}
 
-		time.Sleep(13*time.Second)
+		time.Sleep(13 * time.Second)
 		fxr.connect_more()
 	}
 	if err != nil {

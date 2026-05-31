@@ -259,10 +259,12 @@ type AddrResp struct {
 type ConnResp struct {
 	PeerID      string   `json:"peer_id"`
 	Addr        string   `json:"addr"`
-	Direction   string   `json:"direction"`
+	Direction   string   `json:"direction"`    // c.Stat().Direction
 	IsRelay     bool     `json:"is_relay"`
 	RelayPeer   string   `json:"relay_peer,omitempty"`
 	DirectAddrs []string `json:"direct_addrs,omitempty"`
+	OpenAt      string   `json:"open_at,omitempty"`   // c.Stat().Opened
+	NumStreams  int      `json:"num_streams,omitempty"` // c.Stat().NumStreams
 }
 
 type DHTResp struct {
@@ -598,9 +600,11 @@ func CollectConns() ([]ConnResp, error) {
 			dir = "inbound"
 		}
 		entry := ConnResp{
-			PeerID:    c.RemotePeer().String(),
-			Addr:      c.RemoteMultiaddr().String(),
-			Direction: dir,
+			PeerID:     c.RemotePeer().String(),
+			Addr:       c.RemoteMultiaddr().String(),
+			Direction:  dir,
+			OpenAt:     c.Stat().Opened.Format(time.RFC3339),
+			NumStreams: c.Stat().NumStreams,
 		}
 		if c.Stat().Limited {
 			entry.IsRelay = true

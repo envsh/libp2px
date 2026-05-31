@@ -113,18 +113,19 @@ func init() {
 }
 
 type BootNode struct {
-	Host          host.Host
-	DHT           *dht.IpfsDHT
-	PSO           *pubsub.PubSub
-	Bwc           metrics.Reporter
-	PeerID        peer.ID
-	AddrMgr       *AddrManager
-	PubkeyHex     string
-	BootTime      time.Duration
-	NATStatus     network.Reachability
-	Discovery     *routing.RoutingDiscovery
-	PeerDB        *PeerDB
-	RelayPool     *RelayPool
+	Host            host.Host
+	DHT             *dht.IpfsDHT
+	PSO             *pubsub.PubSub
+	Bwc             metrics.Reporter
+	PeerID          peer.ID
+	AddrMgr         *AddrManager
+	PubkeyHex       string
+	BootTime        time.Duration
+	NATStatus       network.Reachability
+	Discovery       *routing.RoutingDiscovery
+	PeerDB          *PeerDB
+	RelayPool       *RelayPool
+	OfflineDetector *OfflineDetector
 }
 
 // 缓存文件格式: map[string][]string (原始地址 → 解析后的地址列表)
@@ -362,6 +363,9 @@ func Bootstrap(ctx context.Context, cfg Config) (*BootNode, error) {
 		RelayPool: rp,
 		// Discovery: routingDiscovery,
 	}
+
+	bsres.OfflineDetector = NewOfflineDetector(h, rp)
+	go bsres.OfflineDetector.Run(context.Background())
 
 	if !currConfig.IsMobile {
 		bsres.bootDHT(ctx)

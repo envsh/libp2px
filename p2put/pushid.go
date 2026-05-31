@@ -89,8 +89,9 @@ func pushToConnected(ctx context.Context, h host.Host, pid peer.ID, addrs []mult
 const LimitedPxProtocol = protocol.ID("/d2hub/push/1.0")
 
 type PeerInfo struct {
-	ID    string   `json:"id"`
-	Addrs []string `json:"addrs"`
+	ID     string   `json:"id"`
+	Addrs  []string `json:"addrs"`
+	SeenAt int64    `json:"ts,omitempty"`
 }
 
 type PushMessage struct {
@@ -150,7 +151,7 @@ func HandlePushStream(s network.Stream) {
 			}
 			addrs = append(addrs, m)
 		}
-		bootres.PeerDB.Update(rpid, addrs)
+		bootres.PeerDB.Update(rpid, addrs, time.Now())
 	}
 	log.Println("[limitpx] addup peer curr/total", len(req.Peers), len(bootres.PeerDB.List()))
 
@@ -168,8 +169,9 @@ func HandlePushStream(s network.Stream) {
 			strs[i] = a.String()
 		}
 		resp.Peers = append(resp.Peers, PeerInfo{
-			ID:    r.PeerID.String(),
-			Addrs: strs,
+			ID:     r.PeerID.String(),
+			Addrs:  strs,
+			SeenAt: r.SeenAt.UnixMilli(),
 		})
 	}
 
@@ -255,7 +257,11 @@ func PushToPeer(ctx context.Context, pid peer.ID) error {
 			}
 			addrs = append(addrs, m)
 		}
-		bootres.PeerDB.Update(rpid, addrs)
+		seenAt := time.Now()
+		if p.SeenAt > 0 {
+			seenAt = time.UnixMilli(p.SeenAt)
+		}
+		bootres.PeerDB.Update(rpid, addrs, seenAt)
 	}
 
 	return nil

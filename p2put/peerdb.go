@@ -28,13 +28,17 @@ func NewPeerDB(ttl time.Duration) *PeerDB {
 	}
 }
 
-func (db *PeerDB) Update(pid peer.ID, addrs []multiaddr.Multiaddr) {
+func (db *PeerDB) Update(pid peer.ID, addrs []multiaddr.Multiaddr, seenAt time.Time) {
 	db.mu.Lock()
 	defer db.mu.Unlock()
+	existing, ok := db.peers[pid]
+	if ok && !seenAt.After(existing.SeenAt) {
+		return
+	}
 	db.peers[pid] = &PeerRecord{
 		PeerID: pid,
 		Addrs:  addrs,
-		SeenAt: time.Now(),
+		SeenAt: seenAt,
 	}
 }
 

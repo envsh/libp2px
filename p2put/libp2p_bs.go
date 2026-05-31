@@ -205,17 +205,27 @@ func mainLibp2p(cfg Config) {
 	}
 
 	myDumpBoot(res.Host, res.DHT)
-	bootres = res
-	loadPeerstore(res.Host, peerstorePath)
+
+	bootres.Host = res.Host
+	bootres.DHT = res.DHT
+	bootres.PSO = res.PSO
+	bootres.PeerID = res.PeerID
+	bootres.PubkeyHex = res.PubkeyHex
+	bootres.NATStatus = res.NATStatus
+	bootres.Discovery = res.Discovery
+	bootres.BootTime = res.BootTime
+	bootres.OfflineDetector = NewOfflineDetector(res.Host, res.RelayPool)
+	go bootres.OfflineDetector.Run(context.Background())
+
+	loadPeerstore(bootres.Host, peerstorePath)
 	replayProtocols()
 
-	res.PeerDB = NewPeerDB(600 * time.Minute)
 	if currConfig.IsMobile {
 		go AdvertiseHTTP(context.Background())
 		go discoveryV4(context.Background())
 		go DiscoveryV6(context.Background())
 	} else {
-		go res.myDiscoveryV3()
+		go bootres.myDiscoveryV3()
 		//go myDiscoveryV2()
 	}
 
@@ -293,8 +303,6 @@ func Bootstrap(ctx context.Context, cfg Config) (*BootNode, error) {
 			autorelay.WithBackoff(3*time.Minute),
 		)
 	}
-	bwc := metrics.NewBandwidthCounter()
-
 	cm, err := connmgr.NewConnManager(
 		100,
 		200,
@@ -319,7 +327,7 @@ func Bootstrap(ctx context.Context, cfg Config) (*BootNode, error) {
 		libp2p.Transport(websocket.New),
 		libp2p.UserAgent("universal-connectivity/go-peer"),
 
-		libp2p.BandwidthReporter(bwc),
+		libp2p.BandwidthReporter(bootres.Bwc),
 
 		libp2p.AddrsFactory(myAddrsFactory),
 	)
@@ -327,10 +335,9 @@ func Bootstrap(ctx context.Context, cfg Config) (*BootNode, error) {
 		return nil, fmt.Errorf("create libp2p host: %w", err)
 	}
 
-	rp := NewRelayPool(WeightConfig{})
 	for _, r := range staticRelays {
-		rp.Add(r.Addrs[0].String() + "/p2p/" + r.ID.String())
-		rp.Protect(r.ID)
+		bootres.RelayPool.Add(r.Addrs[0].String() + "/p2p/" + r.ID.String())
+		bootres.RelayPool.Protect(r.ID)
 	}
 
 	for _, r := range staticRelays {
@@ -339,7 +346,7 @@ func Bootstrap(ctx context.Context, cfg Config) (*BootNode, error) {
 	if false {
 		go watchStaticRelays(context.Background(), h, staticRelays)
 	}else {
-		go relayPoolManager(context.Background(), h, rp, 3)
+		go relayPoolManager(context.Background(), h, bootres.RelayPool, 3)
 	}
 
 	myID := h.ID()
@@ -355,17 +362,12 @@ func Bootstrap(ctx context.Context, cfg Config) (*BootNode, error) {
 		Host:      h,
 		// DHT:       kadDHT,
 		// PSO:       pso,
-		Bwc:       bwc,
 		PeerID:    myID,
-		AddrMgr:   NewAddrManager(),
 		PubkeyHex: pubHex,
 		BootTime:  time.Since(start),
-		RelayPool: rp,
+		RelayPool: bootres.RelayPool,
 		// Discovery: routingDiscovery,
 	}
-
-	bsres.OfflineDetector = NewOfflineDetector(h, rp)
-	go bsres.OfflineDetector.Run(context.Background())
 
 	if !currConfig.IsMobile {
 		bsres.bootDHT(ctx)

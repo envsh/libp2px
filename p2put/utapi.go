@@ -16,6 +16,7 @@ import (
 	"github.com/ipfs/go-cid"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	discovery2 "github.com/libp2p/go-libp2p/core/discovery"
+	"github.com/libp2p/go-libp2p/core/metrics"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/routing"
@@ -24,7 +25,12 @@ import (
 	"github.com/multiformats/go-multihash"
 )
 
-var bootres *BootNode
+var bootres = &BootNode{
+	AddrMgr:   NewAddrManager(),
+	PeerDB:    NewPeerDB(600 * time.Minute),
+	Bwc:       metrics.NewBandwidthCounter(),
+	RelayPool: NewRelayPool(WeightConfig{}),
+}
 
 //////////////
 

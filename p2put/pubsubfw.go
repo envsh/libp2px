@@ -127,7 +127,10 @@ func handlePubSubFwdStream(s network.Stream) {
 		return
 	}
 
-	log.Printf("[pubsubfw] fwd %s topic=%s peer=%s", msg.ID, *msg.Topic, pid.ShortString())
+	log.Printf("[pubsubfw] fwd from=%s seq_time=%s topic=%s peer=%s",
+		peer.ID(msg.Message.From).ShortString(),
+		time.Unix(0, int64(binary.BigEndian.Uint64(msg.Message.Seqno))).Format("15:04:05.000000"),
+		*msg.Topic, pid.ShortString())
 	// msg.ID 是二进制拼接的 key，JSON Event 序列化会被 \uXXXX 膨胀；
 	// Event 下游不依赖 msg.ID 寻址，清掉节省内存和序列化开销
 	msg.ID = ""

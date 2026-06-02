@@ -306,3 +306,17 @@ func AllowLimitedConn(timeoutsec int, name string) (context.Context, func()) {
 	ctx3 := network.WithAllowLimitedConn(ctx2, name)
 	return ctx3, cancel
 }
+
+// PeerIsConnected checks if peer pid has any connection.
+// If direct=true, only non-Limited (direct) connections count.
+func PeerIsConnected(pid peer.ID, direct bool) bool {
+	if bootres.Host == nil {
+		return false
+	}
+	for _, c := range bootres.Host.Network().ConnsToPeer(pid) {
+		if !direct || !c.Stat().Limited {
+			return true
+		}
+	}
+	return false
+}

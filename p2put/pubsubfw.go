@@ -2,6 +2,7 @@ package p2put
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -136,7 +137,13 @@ func handlePubSubFwdStream(s network.Stream) {
 	msg.ID = ""
 	msg.Message.Signature = nil
 	msg.Message.Key = nil
-	rawChan <- msg
+	rawChan <- Event{Type: "pubsub", Topic: *msg.Message.Topic, Value: pubsubEvent{
+		From:         string(msg.Message.From),
+		Data:         string(msg.Message.Data),
+		Seqno:        base64.StdEncoding.EncodeToString(msg.Message.Seqno),
+		Topic:        *msg.Message.Topic,
+		ReceivedFrom: msg.ReceivedFrom.ShortString(),
+	}}
 }
 
 // ForwardToLimitedPeers constructs and forwards a pubsub message to all

@@ -3,6 +3,7 @@ package p2put
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -38,6 +39,14 @@ type Event struct {
 	Type  string
 	Topic string
 	Value any
+}
+
+type pubsubEvent struct {
+	From         string `json:"from"`
+	Data         string `json:"data"`
+	Seqno        string `json:"seqno"`
+	Topic        string `json:"topic"`
+	ReceivedFrom string `json:"ReceivedFrom"`
 }
 
 var (
@@ -172,7 +181,13 @@ func topicListener(sub *pubsub.Subscription, topic string) {
 		msg.ID = ""
 		msg.Message.Signature = nil
 		msg.Message.Key = nil
-		evt := Event{Type: "pubsub", Topic: topic, Value: msg}
+		evt := Event{Type: "pubsub", Topic: topic, Value: pubsubEvent{
+			From:         string(msg.Message.From),
+			Data:         string(msg.Message.Data),
+			Seqno:        base64.StdEncoding.EncodeToString(msg.Message.Seqno),
+			Topic:        *msg.Message.Topic,
+			ReceivedFrom: msg.ReceivedFrom.ShortString(),
+		}}
 		clientsMu.RLock()
 		for ch, topics := range clientTopics {
 			if hasTopic(topics, topic) {

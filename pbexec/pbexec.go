@@ -119,6 +119,7 @@ func handleExec(s network.Stream) {
 		ExitCode: exitCode,
 		Error:    execErr,
 	})
+	s.CloseWrite()
 }
 
 func Exec(peerID, command string, ctx ...context.Context) (*ExecResult, error) {

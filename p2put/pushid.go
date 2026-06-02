@@ -107,6 +107,7 @@ const (
 // listen /d2hub/push/1.0
 // limited custom push handler
 func HandlePushStream(s network.Stream) {
+	defer s.Close()
 	pid := s.Conn().RemotePeer()
 	log.Printf("[push] incoming from %s", pid.ShortString())
 
@@ -186,7 +187,7 @@ func HandlePushStream(s network.Stream) {
 		s.Reset()
 		return
 	}
-	s.Close()
+	s.CloseWrite()
 	log.Printf("[push] %d peers sent to %s", len(resp.Peers), pid.ShortString())
 }
 

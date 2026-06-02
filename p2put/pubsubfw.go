@@ -162,6 +162,9 @@ func ForwardToLimitedPeers(topic string, data []byte) error {
 		},
 	}
 	msg.ID = pubsub.DefaultMsgIdFn(msg.Message)
+	// peer.ID.UnmarshalJSON 内部调 Decode()，空字符串会失败；
+	// 设一个有效 peer ID 确保 JSON 序列化不受影响。
+	msg.ReceivedFrom = pid
 	isMsgSeen(msg.ID)
 
 	var topicSet map[peer.ID]struct{}

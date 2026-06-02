@@ -160,6 +160,15 @@ func topicListener(sub *pubsub.Subscription, topic string) {
 		}
 		// isme := msg.ReceivedFrom == bootres.PeerID
 		// log.Println("<< submsg", isme, msg.ReceivedFrom.ShortString(), topic, len(msg.Data), substr(string(msg.Data), 48))
+		if isMsgSeen(msg.ID) {
+			// /d2hub/pubsub/1.0 forward handler 已处理过，跳过避免重复
+			continue
+		}
+		// msg.ID 是二进制拼接 key，Event JSON 序列化会被 \uXXXX 膨胀
+		// Event 下游不依赖 msg.ID 寻址，清掉节省内存和序列化开销
+		msg.ID = ""
+		msg.Message.Signature = nil
+		msg.Message.Key = nil
 		evt := Event{Type: "pubsub", Topic: topic, Value: msg}
 		clientsMu.RLock()
 		for ch, topics := range clientTopics {

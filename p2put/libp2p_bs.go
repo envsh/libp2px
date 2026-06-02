@@ -681,6 +681,10 @@ func myEventSuber(h host.Host, evts ...any) {
 			if false {
 				log.Printf("<< %v %+v\n", evname, evt)
 			}
+			if e, ok := evt.(event.EvtLocalAddressesUpdated); ok {
+				e.SignedPeerRecord.RawPayload = nil
+				evt = e
+			}
 			rawChan <- evt
 
 			switch e := evt.(type) {

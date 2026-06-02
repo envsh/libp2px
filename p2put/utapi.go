@@ -173,7 +173,7 @@ func topicListener(sub *pubsub.Subscription, topic string) {
 			// /d2hub/pubsub/1.0 forward handler 已处理过，跳过避免重复
 			continue
 		}
-		if msg.Local {
+		if msg.ReceivedFrom == bootres.PeerID {
 			ForwardToLimitedPeers(*msg.Topic, msg.Data)
 		}
 		// msg.ID 是二进制拼接 key，Event JSON 序列化会被 \uXXXX 膨胀

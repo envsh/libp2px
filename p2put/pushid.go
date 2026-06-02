@@ -1,11 +1,9 @@
 package p2put
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"strings"
 	"time"
@@ -17,6 +15,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/libp2p/go-libp2p/p2p/protocol/identify"
 	pb "github.com/libp2p/go-libp2p/p2p/protocol/identify/pb"
+	"github.com/libp2p/go-msgio"
 	"github.com/libp2p/go-msgio/pbio"
 	"github.com/multiformats/go-multiaddr"
 )
@@ -111,28 +110,17 @@ func HandlePushStream(s network.Stream) {
 	pid := s.Conn().RemotePeer()
 	log.Printf("[push] incoming from %s", pid.ShortString())
 
-	var buf bytes.Buffer
-	readCh := make(chan error, 1)
-	go func() {
-		_, err := io.Copy(&buf, io.LimitReader(s, maxPushLen))
-		readCh <- err
-	}()
-	select {
-	case err := <-readCh:
-		if err != nil {
-			log.Printf("[push] read from %s: %v", pid.ShortString(), err)
-			s.Reset()
-			return
-		}
-	case <-time.After(pushTimeout):
-		log.Printf("[push] read timeout from %s", pid.ShortString())
-		s.Reset()
+	s.SetReadDeadline(time.Now().Add(pushTimeout))
+	rd := msgio.NewVarintReaderSize(s, maxPushLen)
+	raw, err := rd.ReadMsg()
+	if err != nil {
+		n, _ := rd.NextMsgLen()
+		log.Printf("[push] read from %s (len=%d): %v", pid.ShortString(), n, err)
 		return
 	}
 	var req PushMessage
-	if err := json.Unmarshal(buf.Bytes(), &req); err != nil {
+	if err := json.Unmarshal(raw, &req); err != nil {
 		log.Printf("[push] unmarshal from %s: %v", pid.ShortString(), err)
-		s.Reset()
 		return
 	}
 
@@ -179,12 +167,12 @@ func HandlePushStream(s network.Stream) {
 	out, err := json.Marshal(resp)
 	if err != nil {
 		log.Printf("[push] marshal: %v", err)
-		s.Reset()
 		return
 	}
-	if _, err := s.Write(out); err != nil {
-		log.Printf("[push] write to %s: %v", pid.ShortString(), err)
-		s.Reset()
+	s.SetWriteDeadline(time.Now().Add(pushTimeout))
+	wr := msgio.NewVarintWriter(s)
+	if err := wr.WriteMsg(out); err != nil {
+		log.Printf("[push] write to %s (len=%d): %v", pid.ShortString(), len(out), err)
 		return
 	}
 	s.CloseWrite()
@@ -216,16 +204,19 @@ func PushToPeer(ctx context.Context, pid peer.ID) error {
 		s.Reset()
 		return err
 	}
-	if _, err := s.Write(out); err != nil {
-		s.CloseWrite()
-		log.Printf("[push] write to %s: %v", pid.ShortString(), err)
+	wr := msgio.NewVarintWriter(s)
+	if err := wr.WriteMsg(out); err != nil {
+		log.Printf("[push] write to %s (len=%d): %v", pid.ShortString(), len(out), err)
 		return err
 	}
 	s.CloseWrite()
 
-	raw, err := io.ReadAll(s)
+	s.SetReadDeadline(time.Now().Add(pushTimeout))
+	rd := msgio.NewVarintReaderSize(s, maxPushLen)
+	raw, err := rd.ReadMsg()
 	if err != nil {
-		log.Printf("[push] read from %s: %v", pid.ShortString(), err)
+		n, _ := rd.NextMsgLen()
+		log.Printf("[push] read from %s (len=%d): %v", pid.ShortString(), n, err)
 		return err
 	}
 	var resp PushMessage

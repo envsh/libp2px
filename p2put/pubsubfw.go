@@ -6,7 +6,6 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"sync"
 	"sync/atomic"
@@ -17,6 +16,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
+	"github.com/libp2p/go-msgio"
 )
 
 const PubSubFwdProtocol = protocol.ID("/d2hub/pubsub/1.0")
@@ -94,9 +94,10 @@ func ForwardPubSubToPeer(pid peer.ID, msg *pubsub.Message) error {
 	}
 	defer s.Close()
 
-	if _, err := s.Write(out); err != nil {
+	wr := msgio.NewVarintWriter(s)
+	if err := wr.WriteMsg(out); err != nil {
 		s.Reset()
-		return fmt.Errorf("write: %w", err)
+		return fmt.Errorf("write (len=%d): %w", len(out), err)
 	}
 	s.CloseWrite()
 	return nil
@@ -106,10 +107,12 @@ func handlePubSubFwdStream(s network.Stream) {
 	defer s.Close()
 	pid := s.Conn().RemotePeer()
 
-	raw, err := io.ReadAll(io.LimitReader(s, 1<<20))
+	s.SetReadDeadline(time.Now().Add(pushTimeout))
+	rd := msgio.NewVarintReaderSize(s, 1<<20)
+	raw, err := rd.ReadMsg()
 	if err != nil {
-		log.Printf("[pubsubfw] read from %s: %v", pid.ShortString(), err)
-		s.Reset()
+		n, _ := rd.NextMsgLen()
+		log.Printf("[pubsubfw] read from %s (len=%d): %v", pid.ShortString(), n, err)
 		return
 	}
 

@@ -683,11 +683,15 @@ func myEventSuber(h host.Host, evts ...any) {
 			}
 			switch v := evt.(type) {
 			case event.EvtLocalAddressesUpdated:
-				v.SignedPeerRecord.RawPayload = nil
-				evt = v
+				if v.SignedPeerRecord != nil {
+					v.SignedPeerRecord.RawPayload = nil
+					evt = v
+				}
 			case event.EvtPeerIdentificationCompleted:
-				v.SignedPeerRecord.RawPayload = nil
-				evt = v
+				if v.SignedPeerRecord != nil {
+					v.SignedPeerRecord.RawPayload = nil
+					evt = v
+				}
 			}
 			rawChan <- evt
 

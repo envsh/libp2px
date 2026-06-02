@@ -258,7 +258,6 @@ func onSend(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	go ForwardToLimitedPeers(topic, data)
 	writeJSON(w, map[string]bool{"ok": true})
 }
 

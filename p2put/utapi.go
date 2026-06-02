@@ -164,6 +164,9 @@ func topicListener(sub *pubsub.Subscription, topic string) {
 			// /d2hub/pubsub/1.0 forward handler 已处理过，跳过避免重复
 			continue
 		}
+		if msg.Local {
+			ForwardToLimitedPeers(*msg.Topic, msg.Data)
+		}
 		// msg.ID 是二进制拼接 key，Event JSON 序列化会被 \uXXXX 膨胀
 		// Event 下游不依赖 msg.ID 寻址，清掉节省内存和序列化开销
 		msg.ID = ""

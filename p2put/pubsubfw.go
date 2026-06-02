@@ -2,6 +2,7 @@ package p2put
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -136,4 +137,39 @@ func handlePubSubFwdStream(s network.Stream) {
 	msg.Message.Signature = nil
 	msg.Message.Key = nil
 	rawChan <- msg
+}
+
+// ForwardToLimitedPeers constructs and forwards a pubsub message to all
+// PeerDB peers without direct connection, via /d2hub/pubsub/1.0.
+func ForwardToLimitedPeers(topic string, data []byte) error {
+	if bootres.Host == nil {
+		return fmt.Errorf("host not ready")
+	}
+
+	pid := bootres.Host.ID()
+	seqno := make([]byte, 8)
+	binary.BigEndian.PutUint64(seqno, uint64(time.Now().UnixNano()))
+
+	msg := &pubsub.Message{
+		Message: &pb.Message{
+			From:  []byte(pid),
+			Data:  data,
+			Seqno: seqno,
+			Topic: &topic,
+		},
+	}
+	msg.ID = pubsub.DefaultMsgIdFn(msg.Message)
+	isMsgSeen(msg.ID)
+
+	var okN, failN int
+	for _, r := range bootres.PeerDB.List() {
+		if err := ForwardPubSubToPeer(r.PeerID, msg); err != nil {
+			log.Printf("[pubsubfw] fwd to %s: %v", r.PeerID.ShortString(), err)
+			failN++
+		} else {
+			okN++
+		}
+	}
+	log.Printf("[pubsubfw] fwd %q limited=%d ok=%d fail=%d", topic, okN+failN, okN, failN)
+	return nil
 }

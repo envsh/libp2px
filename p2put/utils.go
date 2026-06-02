@@ -199,32 +199,13 @@ func IsGoodPeer(pid any) string {
 		return ""
 	}
 	addrs := bootres.Host.Peerstore().Addrs(p)
-	for _, c := range bootres.Host.Network().Conns() {
-		if c.RemotePeer() != p {
-			continue
-		}
-		if isRelayAddr(c.RemoteMultiaddr()) {
-			continue
-		}
+	for _, c := range bootres.Host.Network().ConnsToPeer(p) {
 		addrs = append(addrs, c.RemoteMultiaddr())
 	}
-	ai := peer.AddrInfo{ID: p, Addrs: addrs}
-	if !IsGoodPeerAddr(ai) {
-		return ""
-	}
 	for _, a := range addrs {
-		if isRelayAddr(a) {
-			continue
-		}
-		s := a.String()
-		if strings.Contains(s, "libp2p.direct") {
-			continue
-		}
-		if _, err := a.ValueForProtocol(multiaddr.P_IP6); err == nil {
-			continue
-		}
-		if strings.Contains(s, "/tcp/4001") || strings.Contains(s, "/tcp/443") {
-			return s
+		ai := peer.AddrInfo{ID: p, Addrs: []multiaddr.Multiaddr{a}}
+		if IsGoodPeerAddr(ai) {
+			return a.String()
 		}
 	}
 	return ""

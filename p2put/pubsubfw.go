@@ -72,10 +72,6 @@ func ForwardPubSubToPeer(pid peer.ID, msg *pubsub.Message) error {
 		return fmt.Errorf("peer %s not in PeerDB", pid.ShortString())
 	}
 
-	if PeerIsConnected(pid, true) {
-		return fmt.Errorf("peer %s has direct connection", pid.ShortString())
-	}
-
 	supported, err := bootres.Host.Peerstore().SupportsProtocols(pid, PubSubFwdProtocol)
 	if err == nil && len(supported) == 0 {
 		return fmt.Errorf("peer %s does not support %s", pid.ShortString(), PubSubFwdProtocol)
@@ -168,8 +164,21 @@ func ForwardToLimitedPeers(topic string, data []byte) error {
 	msg.ID = pubsub.DefaultMsgIdFn(msg.Message)
 	isMsgSeen(msg.ID)
 
+	var topicSet map[peer.ID]struct{}
+	if bootres.PSO != nil {
+		peers := bootres.PSO.ListPeers(topic)
+		topicSet = make(map[peer.ID]struct{}, len(peers))
+		for _, tp := range peers {
+			topicSet[tp] = struct{}{}
+		}
+	}
+
 	var okN, failN int
 	for _, r := range bootres.PeerDB.List() {
+		if _, in := topicSet[r.PeerID]; in {
+			okN++
+			continue
+		}
 		if err := ForwardPubSubToPeer(r.PeerID, msg); err != nil {
 			log.Printf("[pubsubfw] fwd to %s: %v", r.PeerID.ShortString(), err)
 			failN++

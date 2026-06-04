@@ -10,15 +10,6 @@ import (
 	rcmgr "github.com/libp2p/go-libp2p/p2p/host/resource-manager"
 )
 
-func getFlagSet(cfg *Config) *flag.FlagSet {
-	fs := flag.NewFlagSet("libp2p-node", flag.ContinueOnError)
-	fs.StringVar(&cfg.KeyFile, "k", "key.txt", "keyring file")
-	fs.IntVar(&cfg.ListenPort, "l", 0, "TCP listen port - 4001 or random")
-	fs.BoolVar(&cfg.IsMobile, "m", cfg.IsMobile, "Run mobile mode, less bandwidth")
-
-	return fs
-}
-
 type Config struct {
 	// usage1, just Fset.parse()
 	fset *flag.FlagSet // caller parser
@@ -60,6 +51,22 @@ var dftConfig = Config{
 
 var currConfig = dftConfig
 
+func getFlagSet(cfg *Config) *flag.FlagSet {
+	fs := flag.NewFlagSet("libp2p-node", flag.ContinueOnError)
+	fs.StringVar(&cfg.KeyFile, "k", "key.txt", "keyring file")
+	fs.IntVar(&cfg.ListenPort, "l", 0, "TCP listen port - 4001 or random")
+	fs.BoolVar(&cfg.IsMobile, "m", cfg.IsMobile, "Run mobile mode, less bandwidth")
+
+	return fs
+}
+
+func ConfigFlags() (*Config, *flag.FlagSet) {
+    fs := getFlagSet(&currConfig)
+	currConfig.fset = fs
+    return &currConfig, fs
+}
+
+// deprecated
 func ParseConfig() Config {
 	currConfig.fset = getFlagSet(&currConfig)
 	err := currConfig.fset.Parse(os.Args[1:])

@@ -44,14 +44,14 @@ func targetAddr() string {
 }
 
 func init() {
-	p2put.MustRegisterProtocol(tunnelProto, handleTunnel)
+	p2put.MustRegisterProtocol(tunnelProto, handleTunnel, true)
 }
 
 func handleTunnel(s network.Stream) {
 	seq := atomic.AddInt64(&Stats.ConnSeq, 1)
 	start := time.Now()
 	peerid := s.Conn().RemotePeer().ShortString()
-	log.Printf("[pbtunnel] conn=%d newed: %v\n", seq, peerid)
+	log.Printf("[pbtunnel] conn=%d protocol=%s newed: %v\n", seq, s.Protocol(), peerid)
 
 	if ShouldReject != nil && ShouldReject(s) {
 		s.Reset()

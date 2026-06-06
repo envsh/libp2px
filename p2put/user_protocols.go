@@ -23,22 +23,39 @@ func fullProtoID(name string) protocol.ID {
 	return protocol.ID(baseProtocolPath + name)
 }
 
-func RegisterProtocol(name string, handler network.StreamHandler) error {
+func RegisterProtocol(name string, handler network.StreamHandler, wildcard ...bool) error {
+	isWildcard := len(wildcard) > 0 && wildcard[0]
 	pid := fullProtoID(name)
+	if isWildcard {
+		if idx := strings.LastIndex(name, "/"); idx > 0 {
+			pid = fullProtoID(name[:idx+1])
+		} else {
+			return fmt.Errorf("wildcard protocol %q must contain '/' to determine base prefix", name)
+		}
+	}
+
 	regMu.Lock()
 	defer regMu.Unlock()
 	if _, exists := registry[pid]; exists {
 		return fmt.Errorf("protocol %q already registered", pid)
 	}
 	registry[pid] = handler
+
 	if bootres.Host != nil {
-		bootres.Host.SetStreamHandler(pid, handler)
+		if isWildcard {
+			pidStr := string(pid)
+			bootres.Host.SetStreamHandlerMatch(pid, func(proto protocol.ID) bool {
+				return strings.HasPrefix(string(proto), pidStr)
+			}, handler)
+		} else {
+			bootres.Host.SetStreamHandler(pid, handler)
+		}
 	}
 	return nil
 }
 
-func MustRegisterProtocol(name string, handler network.StreamHandler) {
-	if err := RegisterProtocol(name, handler); err != nil {
+func MustRegisterProtocol(name string, handler network.StreamHandler, wildcard ...bool) {
+	if err := RegisterProtocol(name, handler, wildcard...); err != nil {
 		panic(err)
 	}
 }
@@ -80,6 +97,13 @@ func replayProtocols() {
 	regMu.RLock()
 	defer regMu.RUnlock()
 	for pid, handler := range registry {
-		bootres.Host.SetStreamHandler(pid, handler)
+		pidStr := string(pid)
+		if strings.HasSuffix(pidStr, "/") {
+			bootres.Host.SetStreamHandlerMatch(pid, func(proto protocol.ID) bool {
+				return strings.HasPrefix(string(proto), pidStr)
+			}, handler)
+		} else {
+			bootres.Host.SetStreamHandler(pid, handler)
+		}
 	}
 }

@@ -27,6 +27,7 @@ func InstallRestHandler(path string, mux *http.ServeMux) {
 	myinstall("kv", onKV)
 	myinstall("index", onIndex)
 	myinstall("events", onEvents)
+	mux.HandleFunc("/api/events", onEvents) // 模拟 toxhs 的 events 接口
 	myinstall("send", onSend)
 	myinstall("unsub", onUnsub)
 	myinstall("store_peers", onStorePeers)

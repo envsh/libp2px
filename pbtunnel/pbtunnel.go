@@ -8,6 +8,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"math/rand"
 
 	"github.com/envsh/libp2px/p2put"
 	"github.com/libp2p/go-libp2p/core/network"
@@ -200,10 +201,12 @@ func (s *DriftServer) handle(conn net.Conn) {
 	defer connClose()
 
 	openStart := time.Now()
-	p2pStream, err := p2put.OpenStream(context.Background(), s.peerID, tunnelProto)
+	rdport := (rand.Uint32()/2)%(65535-21) + 21
+	rdproto := fmt.Sprintf("%s%v", tunnelProto, rdport)
+	p2pStream, err := p2put.OpenStream(context.Background(), s.peerID, rdproto)
 	openDur := time.Since(openStart)
 	peerid, _ := peer.Decode(s.peerID)
-	log.Printf("[pbtunnel] drift dial %s: %v (open=%s)", peerid.ShortString(), err, openDur.Round(time.Millisecond))	
+	log.Printf("[pbtunnel] drift dial %s: %v (open=%s) %s", peerid.ShortString(), err, openDur.Round(time.Millisecond), rdproto)	
 	if err != nil {
 		return
 	}

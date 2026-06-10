@@ -380,12 +380,14 @@ func (ts *turnServer) connect() {
 		ts.logf("relay Connect probe OK")
 	}
 
-	// Accept loop（先启动，等 ConnectionAttempt）
+	acceptReady := make(chan struct{})
 	go func() {
+		close(acceptReady)
 		for {
 			c, err := alloc.AcceptTCP()
 			if err != nil {
-				return
+				ts.logf("accept error: %v", err)
+				continue
 			}
 			from := c.RemoteAddr()
 			ts.logf("incoming from %s (accepted)", from)
@@ -399,27 +401,31 @@ func (ts *turnServer) connect() {
 		}
 	}()
 
+	<-acceptReady
+
 	// 自测：直连自己的 relay 端口触发 AcceptTCP
 	if mappedAddr != nil {
-		go func() {
-			rawConn, err := net.DialTimeout("tcp", ts.relayAddr.String(), 5*time.Second)
+		for i := 0; i < 2; i++ {
+			rawConn, err := net.DialTimeout("tcp", ts.relayAddr.String(), 10*time.Second)
 			if err != nil {
 				ts.logf("self-test: dial to relay %s fail: %v", ts.relayAddr, err)
-				return
+				time.Sleep(time.Second)
+				continue
 			}
-			defer rawConn.Close()
 			ts.logf("self-test: dial to relay %s OK", ts.relayAddr)
 
 			rawConn.Write([]byte("ping"))
 			buf := make([]byte, 64)
 			n, _ := rawConn.Read(buf)
+			rawConn.Close()
 			ts.logf("self-test: pong from %s: %q", ts.relayAddr, string(buf[:n]))
 			if string(buf[:n]) == "pong" {
 				ts.logf("self-test: SUCCESS - relay data path verified")
-			} else {
-				ts.logf("self-test: FAIL - expected \"pong\", got %q", string(buf[:n]))
+				break
 			}
-		}()
+			ts.logf("self-test: attempt %d FAIL, retrying", i+1)
+			time.Sleep(time.Second)
+		}
 	}
 }
 

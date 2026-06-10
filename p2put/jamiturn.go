@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/pion/logging"
 	"github.com/pion/transport/v2"
 	"github.com/pion/turn/v2"
 )
@@ -317,6 +318,8 @@ func (ts *turnServer) connect() {
 
 	ts.setState(TurnAuthenticating)
 	stunConn := turn.NewSTUNConn(conn)
+	loggerFactory := logging.NewDefaultLoggerFactory()
+	loggerFactory.ScopeLevels["turnc"] = logging.LogLevelDebug
 	c, err := turn.NewClient(&turn.ClientConfig{
 		STUNServerAddr: ts.config.Addr,
 		TURNServerAddr: ts.config.Addr,
@@ -324,7 +327,8 @@ func (ts *turnServer) connect() {
 		Username:       ts.config.Username,
 		Password:       ts.config.Password,
 		Realm:          ts.config.Realm,
-		Software:   "libp2px/888",
+		Software:       "libp2px/888",
+		LoggerFactory:  loggerFactory,
 	})
 	if err != nil {
 		ts.setState(TurnDisconnected)
@@ -494,7 +498,7 @@ func (ts *turnServer) shutdown() {
 
 func (ts *turnServer) stunCheck() {
 	if ts.getState() != TurnAlive || ts.client == nil {
-		return
+//		return
 	}
 	_, err := ts.client.SendBindingRequest()
 	if err != nil {
@@ -511,7 +515,7 @@ func (ts *turnServer) stunCheck() {
 
 func (ts *turnServer) portCheck(addr string) {
 	if ts.getState() != TurnAlive {
-		return
+	//	return
 	}
 	log.Println("[turn:" + ts.config.Addr + "] port check starting for relay " + addr + "...")
 	done := make(chan error, 1)

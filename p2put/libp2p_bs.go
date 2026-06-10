@@ -255,6 +255,18 @@ func mainLibp2p(cfg Config) {
 	}
 	log.Printf("%#v\n", currConfig)
 	log.Printf("Run node in *%v* mode\n", mode)
+
+	jamidhtproxy = NewJamiDHTProxy("http://dhtproxy.jami.net:80")
+
+	turnPool.AddServer(TurnServerConfig{
+		Addr:     "turn.jami.net:3478",
+		Protocol: "tcp",
+		Username: "ring",
+		Password: "ring",
+		Realm:    "ring",
+	})
+	turnPool.Start(context.Background())
+
 	select {}
 }
 
@@ -416,8 +428,6 @@ func Bootstrap(ctx context.Context, cfg Config) (*BootNode, error) {
 
 	log.Println("bootstrap ret...")
 	bsres.PSO = pso
-
-	jamidhtproxy = NewJamiDHTProxy("http://dhtproxy.jami.net:80")
 
 	return bsres, nil
 }

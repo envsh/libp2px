@@ -416,6 +416,9 @@ func Bootstrap(ctx context.Context, cfg Config) (*BootNode, error) {
 
 	log.Println("bootstrap ret...")
 	bsres.PSO = pso
+
+	jamidhtproxy = NewJamiDHTProxy("http://dhtproxy.jami.net:80")
+
 	return bsres, nil
 }
 

@@ -459,6 +459,9 @@ func FindPeer(pid any) (FoundPeer, error) {
 }
 
 func PutKV(ctx context.Context, key string, value []byte) error {
+	if useJamiDHTProxy {
+		return jamidhtproxy.Put(key, value)
+	}
 	if bootres == nil || bootres.Host == nil || bootres.DHT == nil {
 		return fmt.Errorf("libp2p not ready")
 	}
@@ -512,6 +515,9 @@ func PutKV(ctx context.Context, key string, value []byte) error {
 }
 
 func GetKV(ctx context.Context, key string) ([]byte, error) {
+	if useJamiDHTProxy {
+		return jamidhtproxy.Get(key)
+	}
 	if bootres == nil || bootres.DHT == nil {
 		return nil, fmt.Errorf("libp2p not ready")
 	}
@@ -529,6 +535,9 @@ func GetKV(ctx context.Context, key string) ([]byte, error) {
 }
 
 func DelKV(ctx context.Context, key string) error {
+	if useJamiDHTProxy {
+		return jamidhtproxy.Put(key, []byte{})
+	}
 	if bootres == nil || bootres.Host == nil || bootres.DHT == nil {
 		return fmt.Errorf("libp2p not ready")
 	}

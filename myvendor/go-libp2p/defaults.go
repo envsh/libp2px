@@ -13,11 +13,8 @@ import (
 	"github.com/libp2p/go-libp2p/p2p/net/swarm"
 	"github.com/libp2p/go-libp2p/p2p/security/noise"
 	tls "github.com/libp2p/go-libp2p/p2p/security/tls"
-	quic "github.com/libp2p/go-libp2p/p2p/transport/quic"
 	"github.com/libp2p/go-libp2p/p2p/transport/tcp"
-	libp2pwebrtc "github.com/libp2p/go-libp2p/p2p/transport/webrtc"
 	ws "github.com/libp2p/go-libp2p/p2p/transport/websocket"
-	webtransport "github.com/libp2p/go-libp2p/p2p/transport/webtransport"
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/multiformats/go-multiaddr"
@@ -45,10 +42,7 @@ var DefaultMuxers = Muxer(yamux.ID, yamux.DefaultTransport)
 // libp2p instead of replacing them.
 var DefaultTransports = ChainOptions(
 	Transport(tcp.NewTCPTransport),
-	Transport(quic.NewTransport),
 	Transport(ws.New),
-	Transport(webtransport.New),
-	Transport(libp2pwebrtc.New),
 )
 
 // DefaultPrivateTransports are the default libp2p transports when a PSK is supplied.
@@ -82,13 +76,7 @@ var RandomIdentity = func(cfg *Config) error {
 var DefaultListenAddrs = func(cfg *Config) error {
 	addrs := []string{
 		"/ip4/0.0.0.0/tcp/0",
-		"/ip4/0.0.0.0/udp/0/quic-v1",
-		"/ip4/0.0.0.0/udp/0/quic-v1/webtransport",
-		"/ip4/0.0.0.0/udp/0/webrtc-direct",
 		"/ip6/::/tcp/0",
-		"/ip6/::/udp/0/quic-v1",
-		"/ip6/::/udp/0/quic-v1/webtransport",
-		"/ip6/::/udp/0/webrtc-direct",
 	}
 	listenAddrs := make([]multiaddr.Multiaddr, 0, len(addrs))
 	for _, s := range addrs {

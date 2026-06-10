@@ -368,13 +368,15 @@ func (ts *turnServer) connect() {
 		mappedAddr = nil
 	} else {
 		ts.logf("mapped address = %s", mappedAddr)
-		alloc.CreatePermissions(mappedAddr)
-		ts.logf("CreatePermissions for %s OK", mappedAddr)
+		if err := alloc.CreatePermissions(mappedAddr); err != nil {
+			ts.logf("CreatePermissions for %s FAIL: %v", mappedAddr, err)
+		} else {
+			ts.logf("CreatePermissions for %s OK", mappedAddr)
+		}
 	}
 
 	ts.logf("probing relay: Connect to 8.8.8.8:53...")
-	_, err = alloc.Connect(&net.TCPAddr{IP: net.IPv4(8, 8, 8, 8), Port: 53})
-	if err != nil {
+	if _, err := alloc.Connect(&net.TCPAddr{IP: net.IPv4(8, 8, 8, 8), Port: 53}); err != nil {
 		ts.logf("relay Connect probe failed: %v (server may not support RFC 6062)", err)
 	} else {
 		ts.logf("relay Connect probe OK")
@@ -387,15 +389,24 @@ func (ts *turnServer) connect() {
 			c, err := alloc.AcceptTCP()
 			if err != nil {
 				ts.logf("accept error: %v", err)
+				time.Sleep(time.Second)
 				continue
 			}
 			from := c.RemoteAddr()
 			ts.logf("incoming from %s (accepted)", from)
+			if err := c.SetReadDeadline(time.Now().Add(30 * time.Second)); err != nil {
+				ts.logf("set read deadline error: %v", err)
+			}
 			buf := make([]byte, 64)
 			n, err := c.Read(buf)
-			if err == nil {
-				ts.logf("received from %s: %q", from, string(buf[:n]))
-				c.Write([]byte("pong"))
+			if err != nil {
+				ts.logf("read from %s error: %v", from, err)
+				c.Close()
+				continue
+			}
+			ts.logf("received from %s: %q", from, string(buf[:n]))
+			if _, err := c.Write([]byte("pong")); err != nil {
+				ts.logf("write to %s error: %v", from, err)
 			}
 			c.Close()
 		}
@@ -414,9 +425,23 @@ func (ts *turnServer) connect() {
 			}
 			ts.logf("self-test: dial to relay %s OK", ts.relayAddr)
 
-			rawConn.Write([]byte("ping"))
+			if _, err := rawConn.Write([]byte("ping")); err != nil {
+				ts.logf("self-test: write error: %v", err)
+				rawConn.Close()
+				time.Sleep(time.Second)
+				continue
+			}
+			if err := rawConn.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
+				ts.logf("self-test: set read deadline error: %v", err)
+			}
 			buf := make([]byte, 64)
-			n, _ := rawConn.Read(buf)
+			n, err := rawConn.Read(buf)
+			if err != nil {
+				ts.logf("self-test: read error: %v", err)
+				rawConn.Close()
+				time.Sleep(time.Second)
+				continue
+			}
 			rawConn.Close()
 			ts.logf("self-test: pong from %s: %q", ts.relayAddr, string(buf[:n]))
 			if string(buf[:n]) == "pong" {

@@ -5,7 +5,6 @@ import (
 	"sync"
 	"time"
 
-	asnutil "github.com/libp2p/go-libp2p-asn-util"
 	"github.com/libp2p/go-libp2p/core/peer"
 
 	ma "github.com/multiformats/go-multiaddr"
@@ -18,7 +17,7 @@ var (
 	errTooManyReservations        = errors.New("too many reservations")
 	errTooManyReservationsForPeer = errors.New("too many reservations for peer")
 	errTooManyReservationsForIP   = errors.New("too many peers for IP address")
-	errTooManyReservationsForASN  = errors.New("too many peers for ASN")
+
 )
 
 // constraints implements various reservation constraints
@@ -29,7 +28,6 @@ type constraints struct {
 	total []time.Time
 	peers map[peer.ID][]time.Time
 	ips   map[string][]time.Time
-	asns  map[uint32][]time.Time
 }
 
 // newConstraints creates a new constraints object.
@@ -40,7 +38,6 @@ func newConstraints(rc *Resources) *constraints {
 		rc:    rc,
 		peers: make(map[peer.ID][]time.Time),
 		ips:   make(map[string][]time.Time),
-		asns:  make(map[uint32][]time.Time),
 	}
 }
 
@@ -71,19 +68,6 @@ func (c *constraints) AddReservation(p peer.ID, a ma.Multiaddr) error {
 	if len(ipReservations) >= c.rc.MaxReservationsPerIP {
 		return errTooManyReservationsForIP
 	}
-
-	var asnReservations []time.Time
-	var asn uint32
-	if ip.To4() == nil {
-		asn = asnutil.AsnForIPv6(ip)
-		if asn != 0 {
-			asnReservations = c.asns[asn]
-			if len(asnReservations) >= c.rc.MaxReservationsPerASN {
-				return errTooManyReservationsForASN
-			}
-		}
-	}
-
 	expiry := now.Add(validity)
 	c.total = append(c.total, expiry)
 
@@ -92,11 +76,6 @@ func (c *constraints) AddReservation(p peer.ID, a ma.Multiaddr) error {
 
 	ipReservations = append(ipReservations, expiry)
 	c.ips[ip.String()] = ipReservations
-
-	if asn != 0 {
-		asnReservations = append(asnReservations, expiry)
-		c.asns[asn] = asnReservations
-	}
 	return nil
 }
 
@@ -118,8 +97,5 @@ func (c *constraints) cleanup(now time.Time) {
 	}
 	for k, ipReservations := range c.ips {
 		c.ips[k] = c.cleanupList(ipReservations, now)
-	}
-	for k, asnReservations := range c.asns {
-		c.asns[k] = c.cleanupList(asnReservations, now)
 	}
 }

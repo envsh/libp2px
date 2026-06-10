@@ -22,7 +22,6 @@ require (
 	github.com/jbenet/go-temp-err-catcher v0.1.0
 	github.com/libp2p/go-buffer-pool v0.1.0
 	github.com/libp2p/go-flow-metrics v0.1.0
-	github.com/libp2p/go-libp2p-asn-util v0.4.1
 	github.com/libp2p/go-libp2p-testing v0.12.0
 	github.com/libp2p/go-msgio v0.3.0
 	github.com/libp2p/go-nat v0.2.0

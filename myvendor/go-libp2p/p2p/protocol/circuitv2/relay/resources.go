@@ -26,9 +26,6 @@ type Resources struct {
 	// MaxReservationsPerIP is the maximum number of reservations originating from the same
 	// IP address; default is 8.
 	MaxReservationsPerIP int
-	// MaxReservationsPerASN is the maximum number of reservations origination from the same
-	// ASN; default is 32
-	MaxReservationsPerASN int
 }
 
 // RelayLimit are the per relayed connection resource limits.
@@ -53,7 +50,6 @@ func DefaultResources() Resources {
 
 		MaxReservationsPerPeer: 4,
 		MaxReservationsPerIP:   8,
-		MaxReservationsPerASN:  32,
 	}
 }
 

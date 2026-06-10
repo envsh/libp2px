@@ -30,8 +30,6 @@ func TestConstraints(t *testing.T) {
 			MaxReservations:        math.MaxInt32,
 			MaxReservationsPerPeer: math.MaxInt32,
 			MaxReservationsPerIP:   math.MaxInt32,
-			MaxReservationsPerASN:  math.MaxInt32,
-		}
 	}
 	const limit = 7
 
@@ -85,33 +83,6 @@ func TestConstraints(t *testing.T) {
 		}
 	})
 
-	t.Run("reservations per ASN", func(t *testing.T) {
-		getAddr := func(t *testing.T, ip net.IP) ma.Multiaddr {
-			t.Helper()
-			addr, err := ma.NewMultiaddr(fmt.Sprintf("/ip6/%s/tcp/1234", ip))
-			if err != nil {
-				t.Fatal(err)
-			}
-			return addr
-		}
-
-		res := infResources()
-		res.MaxReservationsPerASN = limit
-		c := newConstraints(res)
-		const ipv6Prefix = "2a03:2880:f003:c07:face:b00c::"
-		for i := 0; i < limit; i++ {
-			addr := getAddr(t, net.ParseIP(fmt.Sprintf("%s%d", ipv6Prefix, i+1)))
-			if err := c.AddReservation(test.RandPeerIDFatal(t), addr); err != nil {
-				t.Fatal(err)
-			}
-		}
-		if err := c.AddReservation(test.RandPeerIDFatal(t), getAddr(t, net.ParseIP(fmt.Sprintf("%s%d", ipv6Prefix, 42)))); err != errTooManyReservationsForASN {
-			t.Fatalf("expected to run into total reservation limit, got %v", err)
-		}
-		if err := c.AddReservation(test.RandPeerIDFatal(t), randomIPv4Addr(t)); err != nil {
-			t.Fatalf("expected reservation for different IP to be possible, got %v", err)
-		}
-	})
 }
 
 func TestConstraintsCleanup(t *testing.T) {

@@ -160,12 +160,16 @@ type TurnPool struct {
 	servers map[string]*turnServer
 	ctx     context.Context
 	cancel  context.CancelFunc
+	permips map[string]int // ip => port? // 可以外部追加
 }
 
 func NewTurnPool() *TurnPool {
-	return &TurnPool{
+	tp := &TurnPool{
 		servers: make(map[string]*turnServer),
+		permips: make(map[string]int),
 	}
+	// tp.AddPermIP("177.42.48.118")
+	return tp
 }
 
 func (p *TurnPool) Start(ctx context.Context) {
@@ -256,6 +260,19 @@ func (p *TurnPool) Stats(addr string) *TurnStats {
 		RelayAddr: safeString(ra),
 		FailCount: ts.stunFailCount + ts.portFailCount,
 	}
+}
+
+func (p *TurnPool) AddPermIP(ip string) {
+	if strings.Contains(ip, ":") {
+		ip = strings.Split(ip, ":")[0]
+	}
+	p.permips[ip] = 1
+}
+func (p *TurnPool) RemovePermIP(ip string) {
+	if strings.Contains(ip, ":") {
+		ip = strings.Split(ip, ":")[0]
+	}
+	delete(p.permips, ip)
 }
 
 func safeString(a net.Addr) string {
@@ -414,6 +431,8 @@ func (ts *turnServer) connect() error {
 	if err := c.CreatePermission(&net.UDPAddr{IP: localIP}); err != nil {
 		log.Printf("create permission for local IP: %v\n", err)
 	}
+	turnPool.AddPermIP(AcceptMappedAddr.String())
+	turnPool.AddPermIP(conn.LocalAddr().String())
 
 	ts.peer = NewTurnPeer(ts.config.Addr, ts.relayAddr,
 		ts.config.Username, ts.config.Password, ts.config.Realm)
@@ -421,6 +440,7 @@ func (ts *turnServer) connect() error {
 		log.Printf("turnpeer ExchangeMapped failed: %v\n", err)
 	} else {
 		log.Printf("turnpeer mapped address = %s\n", maddr)
+		turnPool.AddPermIP(maddr.String())
 		if err := alloc.CreatePermissions(maddr); err != nil {
 			log.Printf("CreatePermissions for turnpeer %s FAIL: %v\n", maddr, err)
 		}
@@ -436,7 +456,19 @@ func (ts *turnServer) connect() error {
 		// err = alloc.BindConnection(relayConn, cid)    // ③ 把 TCP 绑定到该连接 ID
 	}
 
+	alloc.CreatePermissions(turnPool.permAddresses()...)
+	c.CreatePermission(turnPool.permAddresses()...)
+
 	return nil
+}
+
+func (tp *TurnPool) permAddresses() []net.Addr {
+	addrs := []net.Addr{}
+	for ip, _ := range tp.permips {
+		o := net.ParseIP(ip)
+		addrs=append(addrs, &net.TCPAddr{IP: o})
+	}
+	return addrs
 }
 
 // reallocate 只重新分配 TCP relay，保留控制连接 (conn + client)
@@ -507,6 +539,10 @@ func (ts *turnServer) reallocate() error {
 	ts.peer.Start()
 
 	log.Printf("reallocate OK: new relay %s\n", ts.relayAddr)
+	turnPool.AddPermIP(mappedAddr.String())
+	turnPool.AddPermIP(ts.conn.LocalAddr().String())
+	alloc.CreatePermissions(turnPool.permAddresses()...)
+	client.CreatePermission(turnPool.permAddresses()...)
 
 	ts.setState(TurnAlive)
 	return nil
@@ -587,7 +623,7 @@ func (ts *turnServer) stunCtrlKeepMappedPort() {
 	if err != nil {
 		ts.stunFailCount++
 		log.Printf("STUN ping fail (%d/3): %v\n", ts.stunFailCount, err)
-		if ts.stunFailCount >= 3 {
+		if ts.stunFailCount >= 2 {
 			log.Printf("too many STUN failures, reconnecting\n")
 			ts.setState(TurnDisconnected)
 		}
@@ -598,6 +634,7 @@ func (ts *turnServer) stunCtrlKeepMappedPort() {
 		log.Println("mapped change", AcceptMappedAddr.String(), mappedAddr.String())
 	}
 	ts.client.CreatePermission(mappedAddr)
+	ts.client.CreatePermission(turnPool.permAddresses()...)
 	ts.stunFailCount = 0
 }
 

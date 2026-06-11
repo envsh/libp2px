@@ -206,7 +206,9 @@ func (tp *TurnPeer) stunCtrlKeepMappedPort() {
 	mappedAddr, err := tp.turnClient.SendBindingRequest()
 	if err != nil {
 		log.Printf("turnpeer: STUN keepalive fail: %v\n", err)
-		// tp.closeTurn()
+		tp.closeTurn()
+		log.Println("turnpeer: reconn ctrl port ...")
+		tp.ExchangeMapped()
 	}else{
 		// check with old mappedAddr
 		if mappedAddr.String() != ConnectMappedAddr.String() {

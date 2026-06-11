@@ -448,12 +448,21 @@ func (ts *turnServer) connect() error {
 	ts.peer.Start()
 
 	log.Printf("probing relay: Connect to 8.8.8.8:53...\n")
+	if err := alloc.CreatePermissions(&net.UDPAddr{IP: net.IPv4(8, 8, 8, 8)}); err != nil {
+		log.Printf("CreatePermissions for 8.8.8.8 fail: %v", err)
+	}
 	cid, err := alloc.Connect(&net.TCPAddr{IP: net.IPv4(8, 8, 8, 8), Port: 53})
 	if err != nil {
-		log.Printf("relay Connect probe failed: %v (server may not support RFC 6062)\n", err)
+		log.Printf("relay Connect probe failed: %v\n", err)
 	} else {
 		log.Printf("relay Connect probe OK %v\n", cid)
 		// err = alloc.BindConnection(relayConn, cid)    // ③ 把 TCP 绑定到该连接 ID
+	}
+	
+	{ // google
+		ttaddr := &net.TCPAddr{IP: net.IPv4(185, 45, 5, 35), Port: 443}
+		cid, err := alloc.Connect(ttaddr)
+		log.Println(cid, err)
 	}
 
 	alloc.CreatePermissions(turnPool.permAddresses()...)

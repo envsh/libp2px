@@ -127,7 +127,7 @@ type BootNode struct {
 
 // 缓存文件格式: map[string][]string (原始地址 → 解析后的地址列表)
 var dnsaddrsResultFile = "/tmp/libp2p_bootstrap_dnsaddrs.json"
-var dnsaddrsCacheDur = 4 * 3600 * time.Second
+var dnsaddrsCacheDur = 5 * 3600 * time.Second
 
 func loadOrResolveAllDNSAddrs() {
 	if data, err := os.ReadFile(dnsaddrsResultFile); err == nil {

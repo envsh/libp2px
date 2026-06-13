@@ -88,9 +88,11 @@ func pushToConnected(ctx context.Context, h host.Host, pid peer.ID, addrs []mult
 const LimitedPxProtocol = protocol.ID("/d2hub/push/1.0")
 
 type PeerInfo struct {
-	ID     string   `json:"id"`
-	Addrs  []string `json:"addrs"`
-	SeenAt int64    `json:"ts,omitempty"`
+	ID           string   `json:"id"`
+	Addrs        []string `json:"addrs"`
+	MappedAddrs  []string `json:"mapped_addrs,omitempty"`
+	AllocedAddrs []string `json:"alloced_addrs,omitempty"`
+	SeenAt       int64    `json:"ts,omitempty"`
 }
 
 type PushMessage struct {
@@ -144,6 +146,23 @@ func HandlePushStream(s network.Stream) {
 	}
 	log.Println("[limitpx] addup peer curr/total", len(req.Peers), len(bootres.PeerDB.List()))
 
+	for _, p := range req.Peers {
+		for _, m := range p.MappedAddrs {
+			turnPool.AddPermIP(m)
+		}
+		for _, a := range p.AllocedAddrs {
+			turnPool.AddPermIP(a)
+		}
+	}
+
+	var mappedAddrs, allocedAddrs []string
+	if AcceptMappedAddr != nil {
+		mappedAddrs = append(mappedAddrs, AcceptMappedAddr.IP.String())
+	}
+	for _, a := range turnPool.ListRelayAddrs() {
+		allocedAddrs = append(allocedAddrs, a.String())
+	}
+
 	records := bootres.PeerDB.List()
 	resp := PushMessage{TS: time.Now().UnixMilli()}
 	for _, r := range records {
@@ -158,9 +177,11 @@ func HandlePushStream(s network.Stream) {
 			strs[i] = a.String()
 		}
 		resp.Peers = append(resp.Peers, PeerInfo{
-			ID:     r.PeerID.String(),
-			Addrs:  strs,
-			SeenAt: r.SeenAt.UnixMilli(),
+			ID:           r.PeerID.String(),
+			Addrs:        strs,
+			MappedAddrs:  mappedAddrs,
+			AllocedAddrs: allocedAddrs,
+			SeenAt:       r.SeenAt.UnixMilli(),
 		})
 	}
 
@@ -182,10 +203,21 @@ func HandlePushStream(s network.Stream) {
 // send /d2hub/push/1.0
 func PushToPeer(ctx context.Context, pid peer.ID) error {
 	addrs := bootres.AddrMgr.GetAll()
+
+	var mappedAddrs, allocedAddrs []string
+	if AcceptMappedAddr != nil {
+		mappedAddrs = append(mappedAddrs, AcceptMappedAddr.IP.String())
+	}
+	for _, a := range turnPool.ListRelayAddrs() {
+		allocedAddrs = append(allocedAddrs, a.String())
+	}
+
 	req := PushMessage{
 		Peers: []PeerInfo{{
-			ID:    bootres.Host.ID().String(),
-			Addrs: addrStrings(addrs),
+			ID:           bootres.Host.ID().String(),
+			Addrs:        addrStrings(addrs),
+			MappedAddrs:  mappedAddrs,
+			AllocedAddrs: allocedAddrs,
 		}},
 		TS: time.Now().UnixMilli(),
 	}

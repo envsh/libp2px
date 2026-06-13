@@ -263,12 +263,14 @@ func (p *TurnPool) Stats(addr string) *TurnStats {
 }
 
 func (p *TurnPool) AddPermIP(ip string) {
+	if ip == "" { return }
 	if strings.Contains(ip, ":") {
 		ip = strings.Split(ip, ":")[0]
 	}
 	p.permips[ip] = 1
 }
 func (p *TurnPool) RemovePermIP(ip string) {
+	if ip == "" { return }
 	if strings.Contains(ip, ":") {
 		ip = strings.Split(ip, ":")[0]
 	}

@@ -726,7 +726,7 @@ func (rf *relayFinder) relayAddrs(addrs []ma.Multiaddr) []ma.Multiaddr {
 
 	// only keep private addrs from the original addr set
 	for _, addr := range addrs {
-		if manet.IsPrivateAddr(addr) {
+		if true || manet.IsPrivateAddr(addr) {
 			raddrs = append(raddrs, addr)
 		}
 	}

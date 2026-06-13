@@ -184,6 +184,29 @@ func myAddrsFactory(addrs []multiaddr.Multiaddr) []multiaddr.Multiaddr {
 	if len(addrs) != len(out) {
 		// log.Println("addrs filter", len(addrs), "=>", len(out))
 	}
+	var relayAddrs []string
+	for _, a := range turnPool.ListRelayAddrs() {
+		tcpAddr, ok := a.(*net.TCPAddr)
+		if !ok {
+			continue
+		}
+		if tcpAddr.IP == nil || tcpAddr.IP.IsUnspecified() || tcpAddr.Port == 0 {
+			continue
+		}
+		var relayMA multiaddr.Multiaddr
+		if tcpAddr.IP.To4() != nil {
+			relayMA, _ = multiaddr.NewMultiaddr(
+				fmt.Sprintf("/ip4/%s/tcp/%d", tcpAddr.IP, tcpAddr.Port))
+		} else {
+			relayMA, _ = multiaddr.NewMultiaddr(
+				fmt.Sprintf("/ip6/%s/tcp/%d", tcpAddr.IP, tcpAddr.Port))
+		}
+		if relayMA != nil {
+			out = append(out, relayMA)
+			relayAddrs = append(relayAddrs, relayMA.String())
+		}
+	}
+	log.Printf("[addrsFactory] alloced addrs (%d): %v", len(relayAddrs), relayAddrs)
 	return out
 }
 

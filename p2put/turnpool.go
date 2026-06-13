@@ -453,16 +453,16 @@ func (ts *turnServer) connect() error {
 	}
 	cid, err := alloc.Connect(&net.TCPAddr{IP: net.IPv4(8, 8, 8, 8), Port: 53})
 	if err != nil {
-		log.Printf("relay Connect probe failed: %v\n", err)
+		log.Printf("relay Connect probe UDP outbound failed: %v\n", err)
 	} else {
-		log.Printf("relay Connect probe OK %v\n", cid)
+		log.Printf("relay Connect probe UDP outbound OK %v\n", cid)
 		// err = alloc.BindConnection(relayConn, cid)    // ③ 把 TCP 绑定到该连接 ID
 	}
 	
 	{ // google
 		ttaddr := &net.TCPAddr{IP: net.IPv4(185, 45, 5, 35), Port: 443}
 		cid, err := alloc.Connect(ttaddr)
-		log.Println(cid, err)
+		log.Println("probe turn TCP outbound", cid, err)
 	}
 
 	alloc.CreatePermissions(turnPool.permAddresses()...)
@@ -712,6 +712,11 @@ func (ts *turnServer) acceptProc() {
 			default:
 			}
 			if ts.isAcceptFatal(err) {
+				select {
+				case <-ts.acceptStopCh:
+					return
+				default:
+				}
 				log.Printf("accept fatal error: %v, reconnecting\n", err)
 				ts.setState(TurnDisconnected)
 				close(ts.reconnectNow)
@@ -724,7 +729,7 @@ func (ts *turnServer) acceptProc() {
 				if err != nil {
 					return
 				}
-				continue
+				return
 			}
 			log.Printf("accept error: %v\n", err)
 			time.Sleep(time.Second)

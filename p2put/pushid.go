@@ -147,6 +147,7 @@ func HandlePushStream(s network.Stream) {
 	log.Println("[limitpx] addup peer curr/total", len(req.Peers), len(bootres.PeerDB.List()))
 
 	for _, p := range req.Peers {
+		log.Println("adding mapped/alloced addrs", p.MappedAddrs, p.AllocedAddrs)
 		for _, m := range p.MappedAddrs {
 			turnPool.AddPermIP(m)
 		}

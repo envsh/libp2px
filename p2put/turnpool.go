@@ -169,6 +169,7 @@ func NewTurnPool() *TurnPool {
 		permips: make(map[string]int),
 	}
 	// tp.AddPermIP("177.42.48.118")
+	tp.AddPermIP("77.42.48.118")
 	return tp
 }
 
@@ -267,13 +268,16 @@ func (p *TurnPool) AddPermIP(ip string) {
 	if strings.Contains(ip, ":") {
 		ip = strings.Split(ip, ":")[0]
 	}
+	if strings.Count(ip, ".") != 3 { return }
 	p.permips[ip] = 1
+	log.Println("added permip", ip)
 }
 func (p *TurnPool) RemovePermIP(ip string) {
 	if ip == "" { return }
 	if strings.Contains(ip, ":") {
 		ip = strings.Split(ip, ":")[0]
 	}
+	if strings.Count(ip, ".") != 3 { return }
 	delete(p.permips, ip)
 }
 

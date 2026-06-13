@@ -234,10 +234,14 @@ func PublishTopic(topic string, data []byte) error {
 	err = t.Publish(context.Background(), data)
 	if err == nil && len(bootres.PSO.ListPeers(topic)) == 0 {
 		err = fmt.Errorf("no peers found for %v", topic)
-		log.Printf("[pso] publish topic=%q, peers=%d", topic, len(bootres.PSO.ListPeers(topic)))
+		if time.Since(pubtopicLastTime) > 5*time.Second {
+			pubtopicLastTime = time.Now()
+			log.Printf("[pso] publish topic=%q, peers=%d", topic, len(bootres.PSO.ListPeers(topic)))
+		}
 	}
 	return err
 }
+var pubtopicLastTime = time.Now()
 
 type BoardResp struct {
 	PeerID    string         `json:"peer_id"`

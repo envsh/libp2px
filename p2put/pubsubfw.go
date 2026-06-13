@@ -72,9 +72,16 @@ func ForwardPubSubToPeer(pid peer.ID, msg *pubsub.Message) error {
 		return fmt.Errorf("peer %s not in PeerDB", pid.ShortString())
 	}
 
+	protos, err2 := bootres.Host.Peerstore().GetProtocols(pid)
 	supported, err := bootres.Host.Peerstore().SupportsProtocols(pid, PubSubFwdProtocol)
 	if err == nil && len(supported) == 0 {
-		return fmt.Errorf("peer %s does not support %s", pid.ShortString(), PubSubFwdProtocol)
+		if err2 == nil && len(protos) == 0 {
+			// 没有获取到任何protos，无法判断，视为继续
+		} else {
+			log.Printf("[pubsubfw] %s does NOT support %s, has %d protos: %v",
+				pid.ShortString(), PubSubFwdProtocol, len(protos), protos)
+			return fmt.Errorf("peer %s does not support %s", pid.ShortString(), PubSubFwdProtocol)
+		}
 	}
 
 	// msg.ID 是 From+Seqno 的二进制拼接，JSON 序列化会被 \uXXXX 膨胀 4-6 倍
@@ -195,6 +202,11 @@ func ForwardToLimitedPeers(topic string, data []byte) error {
 			okN++
 		}
 	}
-	log.Printf("[pubsubfw] fwd %q limited=%d ok=%d fail=%d", topic, okN+failN, okN, failN)
+	if failN > 0 || time.Since(pubsubfwLastTime) > 9 * time.Second {
+		log.Printf("[pubsubfw] fwd %q limited=%d ok=%d fail=%d", topic, okN+failN, okN, failN)
+		pubsubfwLastTime = time.Now()
+	}
 	return nil
 }
+
+var pubsubfwLastTime = time.Now()

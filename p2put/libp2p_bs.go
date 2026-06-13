@@ -217,7 +217,6 @@ func mainLibp2p(cfg Config) {
 	go bootres.OfflineDetector.Run(context.Background())
 
 	loadPeerstore(bootres.Host, peerstorePath)
-	replayProtocols()
 
 	if currConfig.IsMobile {
 		go AdvertiseHTTP(context.Background())
@@ -347,6 +346,8 @@ func Bootstrap(ctx context.Context, cfg Config) (*BootNode, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create libp2p host: %w", err)
 	}
+
+	replayProtocols(h)
 
 	for _, r := range staticRelays {
 		bootres.RelayPool.Add(r.Addrs[0].String() + "/p2p/" + r.ID.String())

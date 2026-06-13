@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
@@ -93,17 +94,17 @@ func OpenStreamDirect(ctx context.Context, peerIDStr string, name string) (netwo
 	return bootres.Host.NewStream(ctx, p, fullProtoID(name))
 }
 
-func replayProtocols() {
+func replayProtocols(h host.Host) {
 	regMu.RLock()
 	defer regMu.RUnlock()
 	for pid, handler := range registry {
 		pidStr := string(pid)
 		if strings.HasSuffix(pidStr, "/") {
-			bootres.Host.SetStreamHandlerMatch(pid, func(proto protocol.ID) bool {
+			h.SetStreamHandlerMatch(pid, func(proto protocol.ID) bool {
 				return strings.HasPrefix(string(proto), pidStr)
 			}, handler)
 		} else {
-			bootres.Host.SetStreamHandler(pid, handler)
+			h.SetStreamHandler(pid, handler)
 		}
 	}
 }

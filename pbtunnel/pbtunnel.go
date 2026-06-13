@@ -200,13 +200,23 @@ func (s *DriftServer) handle(conn net.Conn) {
 	connClose := func() { connCloseOnce.Do(func() { conn.Close() }) }
 	defer connClose()
 
+	peerid, _ := peer.Decode(s.peerID)
+	var preConnType string
+	if p2put.PeerIsConnected(peerid, false) {
+		if p2put.PeerIsConnected(peerid, true) {
+			preConnType = " [DIRECT]"
+		} else {
+			preConnType = " [RELAY]"
+		}
+	}
+	log.Printf("[pbtunnel] pre-conn: %s%s", peerid.ShortString(), preConnType)
+
 	openStart := time.Now()
 	rdport := (rand.Uint32()/2)%(65535-21) + 21
 	rdproto := fmt.Sprintf("%s%v", tunnelProto, rdport)
 	p2pStream, err := p2put.OpenStream(context.Background(), s.peerID, rdproto)
 	openDur := time.Since(openStart)
-	peerid, _ := peer.Decode(s.peerID)
-	log.Printf("[pbtunnel] drift dial %s: %v (open=%s) %s", peerid.ShortString(), err, openDur.Round(time.Millisecond), rdproto)	
+	log.Printf("[pbtunnel] drift dial %s: %v (open=%s) %s%s", peerid.ShortString(), err, openDur.Round(time.Millisecond), rdproto, preConnType)
 	if err != nil {
 		return
 	}
@@ -272,6 +282,5 @@ func (s *DriftServer) handle(conn net.Conn) {
 	log.Println("wg.Wait() ...", peerid.ShortString(), connType)
 	wg.Wait()
 	dur := time.Since(start)
-	pid, _ := peer.Decode(s.peerID)
-	log.Printf("[pbtunnel] drift closed: %s peer=%s recv=%d sent=%d open=%s dur=%s%s", remoteAddr, pid.ShortString(), localRecv, localSent, openDur.Round(time.Millisecond), dur.Round(time.Millisecond), connType)
+	log.Printf("[pbtunnel] drift closed: %s peer=%s recv=%d sent=%d open=%s dur=%s%s", remoteAddr, peerid.ShortString(), localRecv, localSent, openDur.Round(time.Millisecond), dur.Round(time.Millisecond), connType)
 }

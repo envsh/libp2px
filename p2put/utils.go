@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"strconv"
 	"strings"
 	"time"
 
@@ -323,4 +324,15 @@ func PeerIsConnected(pid peer.ID, direct bool) bool {
 		}
 	}
 	return false
+}
+
+func getListenPort() int {
+	for _, a := range bootres.Host.Network().ListenAddresses() {
+		if p, err := a.ValueForProtocol(multiaddr.P_TCP); err == nil {
+			if port, err := strconv.Atoi(p); err == nil {
+				return port
+			}
+		}
+	}
+	return 0
 }

@@ -169,7 +169,6 @@ func NewTurnPool() *TurnPool {
 		permips: make(map[string]int),
 	}
 	// tp.AddPermIP("177.42.48.118")
-	tp.AddPermIP("77.42.48.118")
 	return tp
 }
 
@@ -687,6 +686,26 @@ func (ts *turnServer) handleAccept(c transport.TCPConn) {
 	}
 }
 
+func (ts *turnServer) handleAccept2(c transport.TCPConn) {
+	from := c.RemoteAddr()
+	log.Printf("incoming from %s (accepted)\n", from)
+	// defer c.Close()
+
+	port := getListenPort()
+	addr := fmt.Sprintf("127.0.0.1:%v", port)
+	conn, err := net.Dial("tcp", addr)
+	if err != nil {
+		log.Println(err, addr)
+		return
+	}
+
+	err1, err2 := Pipe(conn, c, 1)
+	if err1 != nil || err1 != nil {
+		log.Println(err1, err2)
+	}
+}
+
+
 func (ts *turnServer) isAcceptFatal(err error) bool {
 	return strings.Contains(err.Error(), "failed to bind connection")
 }
@@ -746,7 +765,8 @@ func (ts *turnServer) acceptProc() {
 			continue
 		}
 		lastReason = ""
-		go ts.handleAccept(c)
+		// go ts.handleAccept(c)
+		go ts.handleAccept2(c)
 	}
 }
 

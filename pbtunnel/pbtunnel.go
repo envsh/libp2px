@@ -211,6 +211,13 @@ func (s *DriftServer) handle(conn net.Conn) {
 		return
 	}
 
+	var connType string
+	if p2pStream.Conn().Stat().Limited {
+		connType = " [RELAY]"
+	} else {
+		connType = " [DIRECT]"
+	}
+
 	var streamCloseOnce sync.Once
 	streamClose := func() { streamCloseOnce.Do(func() { p2pStream.Close() }) }
 	defer streamClose()
@@ -220,7 +227,7 @@ func (s *DriftServer) handle(conn net.Conn) {
 	wg.Add(2)
 
 	go func() {
-		defer log.Println("xfer tun <- sock", peerid.ShortString())
+		defer log.Println("xfer tun <- sock", peerid.ShortString(), connType)
 		defer wg.Done()
 		defer streamClose()
 		buf := make([]byte, bufSize)
@@ -243,7 +250,7 @@ func (s *DriftServer) handle(conn net.Conn) {
 	}()
 
 	go func() {
-		defer log.Println("xfer tun -> sock", peerid.ShortString())
+		defer log.Println("xfer tun -> sock", peerid.ShortString(), connType)
 		defer wg.Done()
 		defer connClose()
 		buf := make([]byte, bufSize)
@@ -262,9 +269,9 @@ func (s *DriftServer) handle(conn net.Conn) {
 		}
 	}()
 
-	log.Println("wg.Wait() ...", peerid.ShortString())
+	log.Println("wg.Wait() ...", peerid.ShortString(), connType)
 	wg.Wait()
 	dur := time.Since(start)
 	pid, _ := peer.Decode(s.peerID)
-	log.Printf("[pbtunnel] drift closed: %s peer=%s recv=%d sent=%d open=%s dur=%s", remoteAddr, pid.ShortString(), localRecv, localSent, openDur.Round(time.Millisecond), dur.Round(time.Millisecond))
+	log.Printf("[pbtunnel] drift closed: %s peer=%s recv=%d sent=%d open=%s dur=%s%s", remoteAddr, pid.ShortString(), localRecv, localSent, openDur.Round(time.Millisecond), dur.Round(time.Millisecond), connType)
 }

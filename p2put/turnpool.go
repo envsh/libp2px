@@ -342,7 +342,11 @@ func (ts *turnServer) connect() error {
 		dialErr error
 	)
 	go func() {
-		conn, dialErr = net.DialTimeout("tcp", ts.config.Addr, 10*time.Second)
+		var tcpAddr *net.TCPAddr
+		tcpAddr, dialErr = net.ResolveTCPAddr("tcp4", ts.config.Addr)
+		if dialErr == nil {
+			conn, dialErr = net.DialTimeout("tcp", tcpAddr.String(), 10*time.Second)
+		}
 		done <- struct{}{}
 	}()
 

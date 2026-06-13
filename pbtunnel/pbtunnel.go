@@ -201,31 +201,31 @@ func (s *DriftServer) handle(conn net.Conn) {
 	defer connClose()
 
 	peerid, _ := peer.Decode(s.peerID)
-	var preConnType string
+	var preConnType = "[UNCONNECT]"
 	if p2put.PeerIsConnected(peerid, false) {
 		if p2put.PeerIsConnected(peerid, true) {
-			preConnType = " [DIRECT]"
+			preConnType = "[DIRECT]"
 		} else {
-			preConnType = " [RELAY]"
+			preConnType = "[RELAY]"
 		}
 	}
-	log.Printf("[pbtunnel] pre-conn: %s%s", peerid.ShortString(), preConnType)
+	log.Printf("[pbtunnel] pre-conn: %s %s", peerid.ShortString(), preConnType)
 
 	openStart := time.Now()
 	rdport := (rand.Uint32()/2)%(65535-21) + 21
 	rdproto := fmt.Sprintf("%s%v", tunnelProto, rdport)
 	p2pStream, err := p2put.OpenStream(context.Background(), s.peerID, rdproto)
 	openDur := time.Since(openStart)
-	log.Printf("[pbtunnel] drift dial %s: %v (open=%s) %s%s", peerid.ShortString(), err, openDur.Round(time.Millisecond), rdproto, preConnType)
+	log.Printf("[pbtunnel] drift dial %s: %v (open=%s) %s %s", peerid.ShortString(), err, openDur.Round(time.Millisecond), rdproto, preConnType)
 	if err != nil {
 		return
 	}
 
 	var connType string
 	if p2pStream.Conn().Stat().Limited {
-		connType = " [RELAY]"
+		connType = "[RELAY]"
 	} else {
-		connType = " [DIRECT]"
+		connType = "[DIRECT]"
 	}
 
 	var streamCloseOnce sync.Once

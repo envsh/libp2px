@@ -15,13 +15,10 @@ import (
 	"time"
 
 	"github.com/ipfs/go-cid"
-	dht "github.com/libp2p/go-libp2p-kad-dht"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
-	discovery2 "github.com/libp2p/go-libp2p/core/discovery"
 	"github.com/libp2p/go-libp2p/core/metrics"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/libp2p/go-libp2p/core/routing"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/multiformats/go-multihash"
 )
@@ -330,36 +327,10 @@ type FoundPeer struct {
 }
 
 func FindPeers(tag string, limit int) ([]FoundPeer, error) {
-	if tag == "" {
-		tag = currConfig.HubName
+	if bootres == nil {
+		return nil, fmt.Errorf("libp2p not ready")
 	}
-	if limit <= 0 {
-		limit = 5
-	}
-	if bootres == nil || bootres.Discovery == nil {
-		return nil, fmt.Errorf("discovery not ready")
-	}
-	findCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-	peerChan, err := bootres.Discovery.FindPeers(findCtx, tag, discovery2.Limit(limit))
-	if err != nil {
-		return nil, err
-	}
-	var out []FoundPeer
-	for p := range peerChan {
-		if p.ID == bootres.PeerID || p.ID == "" {
-			continue
-		}
-		addrs := make([]string, len(p.Addrs))
-		for i, a := range p.Addrs {
-			addrs[i] = a.String()
-		}
-		out = append(out, FoundPeer{PeerID: p.ID.String(), Addrs: addrs})
-	}
-	if out == nil {
-		out = []FoundPeer{}
-	}
-	return out, nil
+	return dhtFindPeers(tag, limit)
 }
 
 func toPeerID(v any) (peer.ID, error) {
@@ -446,12 +417,12 @@ func FindPeer(pid any) (FoundPeer, error) {
 	if err != nil {
 		return FoundPeer{}, err
 	}
-	if bootres == nil || bootres.DHT == nil {
-		return FoundPeer{}, fmt.Errorf("dht not ready")
+	if bootres == nil {
+		return FoundPeer{}, fmt.Errorf("libp2p not ready")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	info, err := bootres.DHT.FindPeer(ctx, p)
+	info, err := dhtFindPeer(ctx, p)
 	if err != nil {
 		return FoundPeer{}, err
 	}
@@ -466,92 +437,30 @@ func PutKV(ctx context.Context, key string, value []byte) error {
 	if useJamiDHTProxy {
 		return jamidhtproxy.Put(key, value)
 	}
-	if bootres == nil || bootres.Host == nil || bootres.DHT == nil {
+	if bootres == nil {
 		return fmt.Errorf("libp2p not ready")
 	}
-
-	// not support put custom key, opendht does
-	// {"error":"create temp dht: protocol prefix /ipfs must have exactly two namespaced validators - /pk and /ipns"}
-	tempDHT, err := dht.New(ctx, bootres.Host, dht.Mode(dht.ModeClient))// dht.ProtocolPrefix("/mychat"),
-	// dht.Validator(record.NamespacedValidator{
-	// 	"kv": NoopValidator{},
-	// 	"pk": record.PublicKeyValidator{},
-	// 	"ipns": ipns.PublicKeyValidator{},
-	// })
-
-	if err != nil {
-		return fmt.Errorf("create temp dht: %w", err)
-	}
-	defer tempDHT.Close()
-
-	_ = tempDHT.Bootstrap(ctx)
-
-	waitCtx, waitCancel := context.WithTimeout(ctx, 30*time.Second)
-	defer waitCancel()
-	for {
-		if tempDHT.RoutingTable().Size() >= 3 {
-			break
-		}
-		select {
-		case <-waitCtx.Done():
-			return fmt.Errorf("routing table too small: %d, need >= 3", tempDHT.RoutingTable().Size())
-		case <-time.After(500 * time.Millisecond):
-		}
-	}
-
-	putCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	// mh, _ := multihash.Sum([]byte(key), multihash.SHA2_256, -1)
-	// key = "/ipns/"+key // pk
-	key2 := "/pk/" + key
-	println(key2)
-	if err := tempDHT.PutValue(putCtx, key2, value); err != nil {
-		return fmt.Errorf("put value: %w", err)
-	}
-
-	getCtx, cancel2 := context.WithTimeout(ctx, 15*time.Second)
-	defer cancel2()
-	if _, err := bootres.DHT.GetValue(getCtx, key2); err != nil {
-		return fmt.Errorf("verify failed: %w", err)
-	}
-
-	return nil
+	return dhtPutKV(ctx, key, value)
 }
 
 func GetKV(ctx context.Context, key string) ([]byte, error) {
 	if useJamiDHTProxy {
 		return jamidhtproxy.Get(key)
 	}
-	if bootres == nil || bootres.DHT == nil {
+	if bootres == nil {
 		return nil, fmt.Errorf("libp2p not ready")
 	}
-
-	getCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
-	defer cancel()
-	val, err := bootres.DHT.GetValue(getCtx, key)
-	if err != nil {
-		return nil, err
-	}
-	if len(val) == 0 {
-		return nil, routing.ErrNotFound
-	}
-	return val, nil
+	return dhtGetKV(ctx, key)
 }
 
 func DelKV(ctx context.Context, key string) error {
 	if useJamiDHTProxy {
 		return jamidhtproxy.Put(key, []byte{})
 	}
-	if bootres == nil || bootres.Host == nil || bootres.DHT == nil {
+	if bootres == nil {
 		return fmt.Errorf("libp2p not ready")
 	}
-
-	putCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	if err := bootres.DHT.PutValue(putCtx, key, []byte{}); err != nil {
-		return fmt.Errorf("del value: %w", err)
-	}
-	return nil
+	return dhtDelKV(ctx, key)
 }
 
 func CollectBoard() (BoardResp, error) {
@@ -669,21 +578,13 @@ func CollectDHT() (DHTResp, error) {
 	if bootres == nil || bootres.Host == nil {
 		return DHTResp{}, fmt.Errorf("libp2p not ready")
 	}
-	if bootres.DHT == nil {
-		return DHTResp{}, nil
-	}
-	rt := bootres.DHT.RoutingTable()
-	peers := rt.ListPeers()
-	strs := make([]string, len(peers))
-	for i, p := range peers {
-		strs[i] = p.String()
-	}
+	size, strs := dhtCollectDHT()
 
 	topics := bootres.PSO.GetTopics()
 	log.Println(topics)
 
 	return DHTResp{
-		PeerCount: rt.Size(),
+		PeerCount: size,
 		Peers:     strs,
 		Topics:    topics,
 	}, nil

@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	// "flag"
 	"fmt"
-	"hash/fnv"
 	// "math/rand"
 	"log"
 	"net"
@@ -19,15 +18,12 @@ import (
 	"strings"
 	// "slices"
 	// "maps"
-	"sync"
 	"time"
 
 	"github.com/envsh/toxera/fedkey"
 	"github.com/libp2p/go-libp2p"
-	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/crypto"
-	discovery2 "github.com/libp2p/go-libp2p/core/discovery"
 	"github.com/libp2p/go-libp2p/core/event"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/metrics"
@@ -35,8 +31,6 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/peerstore"
 	"github.com/libp2p/go-libp2p/core/protocol"
-	"github.com/libp2p/go-libp2p/p2p/discovery/routing"
-	discovery "github.com/libp2p/go-libp2p/p2p/discovery/util"
 	"github.com/libp2p/go-libp2p/p2p/host/autorelay"
 	"github.com/libp2p/go-libp2p/p2p/net/connmgr"
 	"github.com/libp2p/go-libp2p/p2p/protocol/circuitv2/client"
@@ -104,14 +98,11 @@ var savedPeerstoreSum string
 
 func init() {
 	log.SetFlags((log.Flags() | log.Lshortfile | log.Ltime) &^ log.Ldate)
-	if len(libp2pBootstrap) != len(dht.DefaultBootstrapPeers) {
-		log.Println("Need update bootstrap data")
-	}
 }
 
 type BootNode struct {
 	Host            host.Host
-	DHT             *dht.IpfsDHT
+	DHT             any
 	PSO             *pubsub.PubSub
 	Bwc             metrics.Reporter
 	PeerID          peer.ID
@@ -119,7 +110,7 @@ type BootNode struct {
 	PubkeyHex       string
 	BootTime        time.Duration
 	NATStatus       network.Reachability
-	Discovery       *routing.RoutingDiscovery
+	Discovery       any
 	PeerDB          *PeerDB
 	RelayPool       *RelayPool
 	OfflineDetector *OfflineDetector
@@ -433,213 +424,6 @@ func Bootstrap(ctx context.Context, cfg Config) (*BootNode, error) {
 	return bsres, nil
 }
 
-// only !IsMobile
-func (bsres *BootNode) bootDHT(ctx context.Context) (any, error) {
-	h := bsres.Host
-
-	bootaddrs := libp2pBootstrap
-	if true {
-		bootaddrs = resolvedBootstrapNodes
-	}
-	bootstrapInfos := filterConvertBootstrapInfos(bootaddrs)
-
-	fmt.Printf("[+] %d bootstrap peers ready\n\n", len(bootaddrs))
-	if len(bootstrapInfos) == 0 {
-		return nil, fmt.Errorf("no valid bootstrap nodes")
-	}
-
-	fmt.Println("=== Phase 3: DHT Bootstrap ===")
-	fmt.Println("[*] Starting Kademlia DHT in client mode...")
-
-	bootCtx, cancel := context.WithTimeout(ctx, 32*time.Second)
-	defer cancel()
-	kadDHT, err := dht.New(bootCtx, h,
-		dht.Mode(dht.ModeClient),
-		dht.BootstrapPeers(bootstrapInfos...),
-		// dht.DisableAutoRefresh(),
-		dht.Concurrency(3), // ← 并发从 10 降到 3
-		dht.RoutingTableRefreshPeriod(5*time.Minute), // ← 再加这行, 默认10min
-	)
-	if err != nil {
-		return nil, fmt.Errorf("create DHT: %w", err)
-	}
-
-	if err := kadDHT.Bootstrap(bootCtx); err != nil {
-		fmt.Printf("  [!] DHT bootstrap warning: %v\n", err)
-		return nil, err
-	}
-	errch := kadDHT.RefreshRoutingTable()
-	btime := time.Now()
-	<-errch
-
-	log.Println("[*] Waiting DHT routing table online...", time.Since(btime))
-	routingDiscovery := routing.NewRoutingDiscovery(kadDHT)
-	testCID := currConfig.HubName                              // "libp2p-bootstrap-test"
-	rettl := discovery2.TTL(10 * time.Minute)                  // 3h
-	discovery.Advertise(ctx, routingDiscovery, testCID, rettl) // broadcast self
-
-	if false {
-		pingService := ping.NewPingService(h)
-		_ = pingService
-	}
-
-	bsres.DHT = kadDHT
-	bsres.Discovery = routingDiscovery
-	return nil, nil
-}
-
-// only find HubName
-func (bootres *BootNode) myDiscoveryV3() {
-	rd := bootres.Discovery
-	// dht := bootres.DHT
-	tag := currConfig.HubName
-	sec100 := 120 * time.Second
-	known := make(map[string]peer.AddrInfo)
-
-	for i := 0; ; i++ {
-		time.Sleep(3 * time.Second)
-		log.Println("start DHT finding...", i)
-		result := findAndConnect(tag, rd, 0)
-		validcnt := 0
-		for _, p := range result {
-			log.Println(p.ID.ShortString(), p.Addrs)
-			if len(p.Addrs) == 0 {
-				if _, ok := known[p.ID.String()]; !ok {
-					known[p.ID.String()] = p
-				}
-			} else {
-				known[p.ID.String()] = p
-				validcnt += 1
-			}
-			if len(known[p.ID.String()].Addrs) == 0 {
-				ps := bootres.Host.Peerstore()
-				p.Addrs = ps.Addrs(p.ID)
-			}
-		}
-		log.Println("found peers count:", len(known), "valid", validcnt, "round", i)
-		if i < 3 && len(result) == 0 {
-			time.Sleep(time.Duration(2+i) * time.Second)
-			continue
-		}
-
-		btime := time.Now()
-		newconnfixer(known, sec100).dofix()
-		dur := time.Since(btime)
-
-		log.Println("refresh mydht info...", bootres.PeerID.ShortString())
-		ctx1 := context.Background()
-		ctx2, cancel2 := context.WithTimeout(ctx1, 3*time.Second)
-
-		// 替代 RefreshRoutingTable()
-		// 轻量：只更新自己的路由信息
-		bootres.DHT.FindPeer(ctx2, bootres.PeerID)
-		// bootres.DHT.Provide(context.Background(), currConfig.HubName, true)
-
-		// 或
-		// bootres.DHT.GetClosestPeers(ctx, bootres.PeerID.String())
-		cancel2()
-
-		bootres.DHT.GetClosestPeers(context.Background(), bootres.PeerID.String())
-		if dur > sec100 {
-			continue
-		}
-		time.Sleep(sec100 - dur)
-	}
-}
-
-// 搜索所有的tags/topics，流量太大
-func myDiscoveryV2ddd() {
-	type tagState struct {
-		nextAt time.Time
-		busy   bool
-	}
-
-	rd := bootres.Discovery
-	var tagStates sync.Map
-
-	for {
-		time.Sleep(300 * time.Millisecond)
-		discoveryTags.Range(func(key, _ any) bool {
-			tag := key.(string)
-			st, loaded := tagStates.Load(tag)
-			if !loaded {
-				h := fnv.New32a()
-				h.Write([]byte(tag))
-				phase := time.Duration(h.Sum32()%20) * time.Second
-				st = &tagState{nextAt: time.Now().Add(-20*time.Second + phase)}
-				tagStates.Store(tag, st)
-			}
-			s := st.(*tagState)
-			if s.busy || time.Since(s.nextAt) < 0 {
-				return true
-			}
-			s.busy = true
-			s.nextAt = time.Now().Add(30 * time.Second)
-			go func(tag string) {
-				findAndConnect(tag, rd, 0)
-				if v, _ := tagStates.Load(tag); v != nil {
-					v.(*tagState).busy = false
-				}
-			}(tag)
-			return true
-		})
-	}
-}
-
-func findAndConnect(tag string, rd *routing.RoutingDiscovery, limit int) []peer.AddrInfo {
-	findCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-	// 连接够多了，不查
-	if len(bootres.Host.Network().Conns()) > 9 {
-		// return
-	}
-
-	if limit <= 0 {
-		limit = 5
-	}
-	peerChan, err := rd.FindPeers(findCtx, tag,
-		discovery2.Limit(limit), // ← 只取 10 个结果
-	)
-	if err != nil {
-		return nil
-	}
-	var found []peer.AddrInfo
-	var foundm = make(map[string]peer.AddrInfo)
-	for p := range peerChan { // 有重复值
-		if p.ID == bootres.Host.ID() || p.ID == "" {
-			continue
-		}
-		op := foundm[p.ID.String()]
-		p.Addrs = append(p.Addrs, op.Addrs...)
-		foundm[p.ID.String()] = p
-		if true {
-			continue
-		}
-
-		if bootres.Host.Network().Connectedness(p.ID) != network.Connected {
-			// 每连一个前再检查一次，防止批量连
-			// if len(bootres.Host.Network().Conns()) > 12 { break }
-
-			// 每两个连接之间间隔 2s
-			time.Sleep(3 * time.Second)
-			dialCtx, dialCancel := context.WithTimeout(context.Background(), 10*time.Second)
-			t0 := time.Now()
-			if err := bootres.Host.Connect(dialCtx, p); err != nil {
-				log.Printf("[discovery] connect %s: %v", p.ID.ShortString(), err)
-			} else {
-				elapsed := time.Since(t0)
-				log.Printf("[discovery] connected to %s in %v", p.ID.ShortString(), elapsed)
-				updatePeerLatency(p.ID, elapsed)
-			}
-			dialCancel()
-		}
-	}
-	for _, p := range foundm {
-		found = append(found, p)
-	}
-	return found
-}
-
 func tryConnect(p peer.AddrInfo) error {
 	if bootres.Host.Network().Connectedness(p.ID) == network.Connected {
 		return nil
@@ -662,23 +446,6 @@ func tryConnect(p peer.AddrInfo) error {
 	}
 	dialCancel()
 	return err
-}
-
-func myDiscoveryV1(bootCtx context.Context, routingDiscovery *routing.RoutingDiscovery, testCID string, myID peer.ID) (discoveredSet map[peer.ID]struct{}) {
-	findCtx, findCancel := context.WithTimeout(bootCtx, 10*time.Second)
-	defer findCancel()
-	peerChan, err := routingDiscovery.FindPeers(findCtx, testCID)
-	if err == nil {
-		for p := range peerChan {
-			if p.ID == myID || p.ID == "" {
-				continue
-			}
-			discoveredSet[p.ID] = struct{}{}
-		}
-	} else {
-		log.Println(err)
-	}
-	return
 }
 
 // new(event.EvtLocalReachabilityChanged)...
@@ -800,18 +567,6 @@ func myEventSuber(h host.Host, evts ...any) {
 			}
 		}
 	}()
-}
-
-func myDumpBoot(h host.Host, dht *dht.IpfsDHT) {
-	dhtsz := 0
-	if dht != nil {
-		dhtsz = dht.RoutingTable().Size()
-	}
-
-	conns := GetCurrConns(h)
-
-	log.Printf("conns %v, dht %v", len(conns), dhtsz)
-	log.Println()
 }
 
 func GetCurrConns(h host.Host) (discoveredSet map[peer.ID]struct{}) {

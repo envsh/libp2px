@@ -50,8 +50,6 @@ func (fxr *connfixer) dofix() {
 	btime := time.Now()
 	sec100 := fxr.maxdur
 	known := fxr.known
-	dht := bootres.DHT
-
 	var err error
 	var p2 peer.AddrInfo
 	time.Sleep(3 * time.Second)
@@ -103,7 +101,7 @@ func (fxr *connfixer) dofix() {
 			t1 := time.Now()
 			log.Println("(UDP) dht.FindPeer'ing ...", p2.ID.ShortString())
 			// findAndConnect(p2.ID.String(), rd, 1)
-			addrinfo, err := dht.FindPeer(context.Background(), p2.ID)
+			addrinfo, err := dhtFindPeer(context.Background(), p2.ID)
 			_ = addrinfo
 			log.Println("(UDP) dht.FindPeer'ed ...", time.Since(t1), p2.ID.ShortString(), addrinfo, err)
 			if err != nil {

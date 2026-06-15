@@ -68,6 +68,19 @@ func (db *PeerDB) List() []PeerRecord {
 	}
 	return out
 }
+func (db *PeerDB) ListIDs() []string {
+	db.mu.RLock()
+	defer db.mu.RUnlock()
+	out := make([]string, 0, len(db.peers))
+	now := time.Now()
+	for _, r := range db.peers {
+		if now.Sub(r.SeenAt) > db.ttl {
+			continue
+		}
+		out = append(out, r.PeerID.String())
+	}
+	return out
+}
 
 func (db *PeerDB) cleanup(ctx context.Context) {
 	ticker := time.NewTicker(5 * time.Minute)

@@ -159,6 +159,12 @@ func NewDriftServer(peerID string) *DriftServer {
 	return &DriftServer{peerID: peerID}
 }
 
+func (s *DriftServer) SwitchPeer(peerID string) string {
+	oldval := s.peerID
+	s.peerID = peerID
+	return oldval
+}
+
 func (s *DriftServer) Listen(addr string) error {
 	l, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -193,14 +199,22 @@ func (s *DriftServer) Close() error {
 }
 
 func (s *DriftServer) handle(conn net.Conn) {
+	s.handleP2x(conn)
+}
+func (s *DriftServer) handleTox2x(conn net.Conn) {
+}
+func (s *DriftServer) handleTurn2x(conn net.Conn) {
+}
+func (s *DriftServer) handleP2x(conn net.Conn) {
 	remoteAddr := conn.RemoteAddr().String()
 	start := time.Now()
+	peerhum := s.peerID
 
 	var connCloseOnce sync.Once
 	connClose := func() { connCloseOnce.Do(func() { conn.Close() }) }
 	defer connClose()
 
-	peerid, _ := peer.Decode(s.peerID)
+	peerid, _ := peer.Decode(peerhum)
 	var preConnType = "[UNCONNECT]"
 	if p2put.PeerIsConnected(peerid, false) {
 		if p2put.PeerIsConnected(peerid, true) {
@@ -214,7 +228,7 @@ func (s *DriftServer) handle(conn net.Conn) {
 	openStart := time.Now()
 	rdport := (rand.Uint32()/2)%(65535-21) + 21
 	rdproto := fmt.Sprintf("%s%v", tunnelProto, rdport)
-	p2pStream, err := p2put.OpenStream(context.Background(), s.peerID, rdproto)
+	p2pStream, err := p2put.OpenStream(context.Background(), peerhum, rdproto)
 	openDur := time.Since(openStart)
 	log.Printf("[pbtunnel] drift dial %s: %v (open=%s) %s %s", peerid.ShortString(), err, openDur.Round(time.Millisecond), rdproto, preConnType)
 	if err != nil {

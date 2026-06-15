@@ -149,7 +149,7 @@ func getOrSubscribeTopic(topic string) (*pubsub.Topic, error) {
 	return t, nil
 }
 
-func substr(s string, maxRunes int) string {
+func substrSafe(s string, maxRunes int) string {
 	runes := []rune(s)
 	if len(runes) > maxRunes {
 		runes = runes[:maxRunes]
@@ -165,7 +165,7 @@ func topicListener(sub *pubsub.Subscription, topic string) {
 			return
 		}
 		// isme := msg.ReceivedFrom == bootres.PeerID
-		// log.Println("<< submsg", isme, msg.ReceivedFrom.ShortString(), topic, len(msg.Data), substr(string(msg.Data), 48))
+		// log.Println("<< submsg", isme, msg.ReceivedFrom.ShortString(), topic, len(msg.Data), substrSafe(string(msg.Data), 48))
 		if isMsgSeen(msg.ID) {
 			// /d2hub/pubsub/1.0 forward handler 已处理过，跳过避免重复
 			continue
@@ -642,7 +642,7 @@ func CollectRelays() (RelayResp, error) {
 }
 
 func CollectStorePeers() []StorePeerEntry {
-	if bootres == nil || bootres.Host == nil {
+	if  bootres.Host == nil {
 		return nil
 	}
 	ps := bootres.Host.Peerstore()
@@ -678,8 +678,12 @@ func CollectStorePeers() []StorePeerEntry {
 	return out
 }
 
+func GetClusterPeers() []string {
+	return bootres.PeerDB.ListIDs()
+}
+
 func CollectTopics() []TopicEntry {
-	if bootres == nil || bootres.Host == nil || bootres.PSO == nil {
+	if bootres.Host == nil || bootres.PSO == nil {
 		return []TopicEntry{}
 	}
 	seen := make(map[string]*TopicEntry)

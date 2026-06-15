@@ -511,7 +511,8 @@ func (ts *turnServer) reallocate() error {
 		ts.alloc = nil
 		ts.relayAddr = nil
 		ts.resourceMu.Unlock()
-		close(ts.reconnectNow)
+		ch := ts.reconnectNow
+		close(ch)
 		return fmt.Errorf("reallocate AllocateTCP fail: %w", err)
 	}
 
@@ -741,6 +742,7 @@ func (ts *turnServer) acceptProc() {
 			default:
 			}
 			if ts.isAcceptFatal(err) {
+				ch := ts.reconnectNow
 				select {
 				case <-ts.acceptStopCh:
 					return
@@ -748,7 +750,7 @@ func (ts *turnServer) acceptProc() {
 				}
 				log.Printf("accept fatal error: %v, reconnecting\n", err)
 				ts.setState(TurnDisconnected)
-				close(ts.reconnectNow)
+				close(ch)
 				return
 			}
 			// 端口还在，但不接收新连接

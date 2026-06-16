@@ -491,6 +491,8 @@ func (tp *TurnPool) permAddresses() []net.Addr {
 
 // reallocate 只重新分配 TCP relay，保留控制连接 (conn + client)
 func (ts *turnServer) reallocate() error {
+	reconnectCh := ts.reconnectNow
+
 	ts.resourceMu.Lock()
 	if ts.client == nil {
 		ts.resourceMu.Unlock()
@@ -511,8 +513,11 @@ func (ts *turnServer) reallocate() error {
 		ts.alloc = nil
 		ts.relayAddr = nil
 		ts.resourceMu.Unlock()
-		ch := ts.reconnectNow
-		close(ch)
+		select {
+		case <-ts.acceptStopCh:
+		default:
+			close(reconnectCh)
+		}
 		return fmt.Errorf("reallocate AllocateTCP fail: %w", err)
 	}
 
@@ -713,11 +718,13 @@ func (ts *turnServer) isAcceptFatal(err error) bool {
 
 func (ts *turnServer) acceptProc() {
 	defer log.Println("acceptProc() exited", ts.relayAddr)
+	myStopCh := ts.acceptStopCh
+	myReconnect := ts.reconnectNow
 	lastReason := ""
 	_ = lastReason
 	for {
 		select {
-		case <-ts.acceptStopCh:
+		case <-myStopCh:
 			return
 		default:
 		}
@@ -737,20 +744,19 @@ func (ts *turnServer) acceptProc() {
 				continue  // 正常超时，下一轮循环
 			}
 			select {
-			case <-ts.acceptStopCh:
+			case <-myStopCh:
 				return
 			default:
 			}
 			if ts.isAcceptFatal(err) {
-				ch := ts.reconnectNow
 				select {
-				case <-ts.acceptStopCh:
+				case <-myStopCh:
 					return
 				default:
 				}
 				log.Printf("accept fatal error: %v, reconnecting\n", err)
 				ts.setState(TurnDisconnected)
-				close(ch)
+				close(myReconnect)
 				return
 			}
 			// 端口还在，但不接收新连接

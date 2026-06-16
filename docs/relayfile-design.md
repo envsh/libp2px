@@ -74,7 +74,8 @@ bitswap 的复杂度都花在**内容发现**（"谁有这个块？"）上，两
     "chunk_size": 65536,
     "total_chunks": 763,
     "checksum": "sha256:e3b0c44298fc1c149afbf4c8996fb924...",
-    "offset": 0
+    "offset": 0,
+    "compression": "auto"
 }
 ```
 
@@ -84,6 +85,7 @@ bitswap 的复杂度都花在**内容发现**（"谁有这个块？"）上，两
 - `total_chunks`：总块数，`ceil(size / chunk_size)`
 - `checksum`：格式 `sha256:<hex>`，发送方预先计算整个文件的 SHA-256
 - `offset`：断线续传时非零，表示发送方要从第 offset 块开始发
+- `compression`：压缩模式，`"zstd"` 或 `"none"`（由发送方根据 CompressMode 和自动检测决定）
 
 ### ACCEPT Payload
 
@@ -166,13 +168,13 @@ SENDER 发送窗口：
   [0][1][2][3][4][5][6][7]  ← 流水线发出，不等确认
 
 RECEIVER 处理：
-  逐个接收，写入 temp 文件，更新 bitmap
-  当 seq % 8 == 7 时：检查 0..seq 全部连续 → 发 ACK(cs=seq)
-  如果不连续（有空洞）→ 找出最大连续值 cs → 发 ACK(cs)
+   逐个接收，写入 temp 文件，更新 bitmap，计算 newSeq = 最大连续 seq
+   当 newSeq - lastAck ≥ 8 或 newSeq ≥ totalChunks 时：发 ACK(cs = newSeq - 1)
+   （使用 delta 而非 seq % 8，确保续传后任意偏移的流水线仍按 8 块节奏 ACK）
 
 SENDER 收到 ACK(cs=seq)：
-  丢弃 seq 之前已发数据缓存（如果有）
-  继续下发 seq+1..seq+8
+   丢弃 seq 之前已发数据缓存（如果有）
+   继续下发 seq+1..seq+8
 ```
 
 **效率**：50MB = 800 块，ACK 次数 = ceil(800/8) = 100 次。相比单块 ACK 节省 700 次 RTT。
@@ -211,11 +213,11 @@ type fileSession struct {
     chunkSize   int
     totalChunks int
     checksum    string            // "sha256:<hex>"
-    state       string            // init|transfer|checksum|done|error|cancelled
+    compression string            // "zstd" / "none"
+    state       string            // init|transfer|done|error|cancelled
 
     // 发送方
-    file        *os.File          // 源文件句柄
-    curSeq      int               // 下一个要发的 seq
+    file        *os.File          // 源文件句柄（SendFile 局部使用，不在 struct 中跟踪 seq）
 
     // 接收方
     tmpFile     *os.File          // .part 临时文件
@@ -254,10 +256,19 @@ func SetFileRecvDir(dir string)
 
 ```go
 // SendFile 向指定 peer 发送文件，阻塞到完成或出错。
+// mode 控制压缩: CompressAuto(默认) / CompressOn / CompressOff。
 // ctx 超时或取消会发送 CANCEL 帧并清理。
 // cb 在每个 ACK 批次到达时触发。
 // 返回 sessionID 供后续 CancelFileSession 使用。
-func SendFile(ctx context.Context, pid peer.ID, localPath string, cb ProgressFunc) (sessionID string, err error)
+func SendFile(ctx context.Context, pid peer.ID, localPath string, mode CompressMode, cb ProgressFunc) (sessionID string, err error)
+```
+
+### 压缩控制
+
+```go
+// SetCompressMode 设置全局默认压缩模式。
+// SendFile 的 mode 参数可覆盖全局设置。
+func SetCompressMode(m CompressMode)
 ```
 
 ### 接收
@@ -387,23 +398,79 @@ SendFile(ctx, pid, path, cb)
 
 ---
 
-## 9. 实现文件
+## 9. 压缩
 
-### 新增：`p2put/relayfile.go`
+### CompressMode
 
-全部代码在此一个文件中：
+```go
+type CompressMode int
 
-| 段 | 估算行数 | 内容 |
-|----|---------|------|
-| 帧读写 | 40 | `frameWrite` / `frameRead` |
-| INIT 发送 | 15 | 计算 checksum + 构造 JSON |
-| 发送循环 | 40 | 流水线 8 块 + 等 ACK |
-| 接收循环 | 40 | bitmap + 写入 + 批量 ACK |
-| FIN 校验 | 20 | SHA-256 对比 |
-| session 管理 | 30 | sync.Map + cancel |
-| API 函数 | 40 | SendFile / ReceiveFile / CancelFileSession |
-| handler | 20 | HandleFileStream + init() |
-| **合计** | **~250** | |
+const (
+    CompressAuto CompressMode = iota  // 自动检测
+    CompressOn                        // 强制 zstd
+    CompressOff                       // 不压缩
+)
+
+// 全局默认
+func SetCompressMode(m CompressMode)
+```
+
+### 5 层自动检测（CompressAuto 时）
+
+```
+file path
+  │
+  ├─ ① 扩展名黑名单 (0 I/O)
+  │    .jpg .png .mp4 .zip .mp3 .flac ...
+  │    └─ 命中 → "none"
+  │
+  ├─ ② 读前 64KB 样本
+  │
+  ├─ ③ Magic bytes 识别
+  │    gzip / zstd / png / jpeg / zip / mp3 ... ~15 种
+  │    └─ 命中 → "none"
+  │
+  ├─ ④ 熵估算
+  │    H = -Σ p(i)·log₂(p(i))
+  │    ├─ H ≥ 7.5 → 已加密/压缩 → "none"
+  │    ├─ H ≤ 6.0 → 文本 → "zstd"
+  │    └─ 中间 → 走⑤
+  │
+  └─ ⑤ 抽样 zstd 压缩比
+        ├─ 压缩后 < 85% → "zstd"
+        └─ 否则 → "none"
+```
+
+### DATA 帧格式（compression=zstd 时）
+
+```
+ 0                   1                   2                   3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|                       Seq (8 bytes BE)                        |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|                 Uncompressed Len (4 bytes BE)                 |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|                   zstd compressed data                         |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+```
+
+每块独立 zstd frame → 续传不受影响。
+
+### 依赖
+
+`github.com/klauspost/compress`（已存在于 go.sum，转为 direct），`go mod tidy` 后自动确认。
+
+---
+
+## 10. 实现文件
+
+### 新增
+
+| 文件 | 内容 | 行数 |
+|------|------|------|
+| `p2put/filecomp.go` | `CompressMode` + `detectCompression` + magic/熵/压缩比 + `packDataFrame`/`unpackDataFrame` | ~120 |
+| `p2put/relayfile.go` | 引入 compression 字段、zstd DATA 帧、SendFile mode 参数 | ~+40 |
 
 ### 无需修改的文件
 
@@ -413,7 +480,6 @@ SendFile(ctx, pid, path, cb)
 
 ### 兼容性
 
-- 无第三方二进制依赖
-- 无 build tag 要求
+- 唯一第三方依赖 `klauspost/compress` 已是工程间接依赖，无新增下载
 - 无 CGO
 - 与 Android/iOS 编译兼容

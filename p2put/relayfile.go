@@ -63,6 +63,7 @@ type fileSession struct {
 	chunkSize   int
 	totalChunks int
 	checksum    string
+	compression string
 	state       string
 
 	file   *os.File
@@ -202,6 +203,7 @@ func HandleFileStream(s network.Stream) {
 		TotalChunks int    `json:"total_chunks"`
 		Checksum    string `json:"checksum"`
 		Offset      int    `json:"offset"`
+		Compression string `json:"compression"`
 	}
 	if err := readJSONFrame(s, frameTypeInit, &init); err != nil {
 		log.Printf("[relayfile] read INIT: %v", err)
@@ -269,6 +271,10 @@ func HandleFileStream(s network.Stream) {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
+	compression := init.Compression
+	if compression != "zstd" {
+		compression = "none"
+	}
 	ses := &fileSession{
 		id:          sessionID,
 		peer:        s.Conn().RemotePeer(),
@@ -278,6 +284,7 @@ func HandleFileStream(s network.Stream) {
 		chunkSize:   init.ChunkSize,
 		totalChunks: init.TotalChunks,
 		checksum:    init.Checksum,
+		compression: compression,
 		state:       "transfer",
 		tmpFile:     tmpFile,
 		bitmap:      bitmap,
@@ -322,11 +329,12 @@ func receiveLoop(s network.Stream, ses *fileSession, sid string, cb ProgressFunc
 			cleanupSession(ses, sid, fmt.Errorf("remote error: %s", e.Reason))
 			return
 		case frameTypeData:
-			if len(payload) < 8 {
-				continue
+			dataSeq, chunkData, err := unpackDataFrame(payload, ses.compression)
+			if err != nil {
+				writeJSONFrame(s, frameTypeError, mustJSON(struct{ Reason string }{err.Error()}))
+				cleanupSession(ses, sid, fmt.Errorf("unpack data: %w", err))
+				return
 			}
-			dataSeq := int64(binary.BigEndian.Uint64(payload[:8]))
-			chunkData := payload[8:]
 			if !bitmapHas(ses.bitmap, int(dataSeq)) {
 				if _, err := ses.tmpFile.Write(chunkData); err != nil {
 					writeJSONFrame(s, frameTypeError, mustJSON(struct{ Reason string }{err.Error()}))
@@ -413,7 +421,7 @@ func receiveLoop(s network.Stream, ses *fileSession, sid string, cb ProgressFunc
 	}
 }
 
-func SendFile(ctx context.Context, pid peer.ID, localPath string, cb ProgressFunc) (string, error) {
+func SendFile(ctx context.Context, pid peer.ID, localPath string, mode CompressMode, cb ProgressFunc) (string, error) {
 	file, err := os.Open(localPath)
 	if err != nil {
 		return "", fmt.Errorf("open: %w", err)
@@ -439,6 +447,15 @@ func SendFile(ctx context.Context, pid peer.ID, localPath string, cb ProgressFun
 
 	sessionID := newSessionID()
 
+	var compression string
+	if mode == CompressOn {
+		compression = "zstd"
+	} else if mode == CompressOff {
+		compression = "none"
+	} else {
+		compression = detectCompression(localPath)
+	}
+
 	ctx2, cancel := context.WithCancel(ctx)
 	ses := &fileSession{
 		id:          sessionID,
@@ -448,6 +465,7 @@ func SendFile(ctx context.Context, pid peer.ID, localPath string, cb ProgressFun
 		chunkSize:   chunkSize,
 		totalChunks: totalChunks,
 		checksum:    checksum,
+		compression: compression,
 		state:       "init",
 		file:        file,
 		cancel:      cancel,
@@ -474,6 +492,7 @@ initRetry:
 		TotalChunks int    `json:"total_chunks"`
 		Checksum    string `json:"checksum"`
 		Offset      int    `json:"offset"`
+		Compression string `json:"compression"`
 	}{
 		Name:        filepath.Base(localPath),
 		Size:        fileSize,
@@ -481,6 +500,7 @@ initRetry:
 		TotalChunks: totalChunks,
 		Checksum:    checksum,
 		Offset:      offset,
+		Compression: compression,
 	}); err != nil {
 		return sessionID, fmt.Errorf("write init: %w", err)
 	}
@@ -533,9 +553,7 @@ initRetry:
 			if n == 0 {
 				break
 			}
-			pay := make([]byte, 8+n)
-			binary.BigEndian.PutUint64(pay[:8], uint64(seq))
-			copy(pay[8:], buf[:n])
+			pay := packDataFrame(seq, buf[:n], compression)
 			if err := frameWrite(s, frameTypeData, pay); err != nil {
 				return sessionID, fmt.Errorf("write data: %w", err)
 			}

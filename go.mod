@@ -5,9 +5,13 @@ go 1.21.0
 require (
 	github.com/envsh/toxera/fedkey v0.0.0-20260524011924-6488539daf77
 	github.com/ipfs/go-cid v0.4.1
+	github.com/klauspost/compress v1.17.9
 	github.com/libp2p/go-msgio v0.3.0
 	github.com/multiformats/go-multibase v0.2.0
 	github.com/multiformats/go-multihash v0.2.3
+	github.com/pion/logging v0.2.4
+	github.com/pion/transport/v2 v2.2.10
+	github.com/pion/turn/v2 v2.1.6
 )
 
 // require github.com/envsh/toxera/fedkey v0.0.0
@@ -99,11 +103,9 @@ require (
 	github.com/opentracing/opentracing-go v1.2.0 // indirect
 	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58 // indirect
 	github.com/pion/dtls/v2 v2.2.12 // indirect
-	github.com/pion/logging v0.2.2 // indirect
 	github.com/pion/randutil v0.1.0 // indirect
 	github.com/pion/stun v0.6.1 // indirect
-	github.com/pion/transport/v2 v2.2.10 // indirect
-	github.com/pion/turn/v2 v2.1.6 // indirect
+	github.com/pion/transport/v3 v3.1.1 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/polydawn/refmt v0.89.0 // indirect
 	github.com/prometheus/client_golang v1.20.0 // indirect
@@ -118,7 +120,7 @@ require (
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.0 // indirect
 	github.com/whyrusleeping/go-keyspace v0.0.0-20160322163242-5b898ac5add1 // indirect
-	github.com/wlynxg/anet v0.0.4 // indirect
+	github.com/wlynxg/anet v0.0.5 // indirect
 	go.opencensus.io v0.24.0 // indirect
 	go.opentelemetry.io/otel v1.27.0 // indirect
 	go.opentelemetry.io/otel/metric v1.27.0 // indirect

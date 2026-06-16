@@ -701,7 +701,7 @@ func (ts *turnServer) handleAccept2(c transport.TCPConn) {
 	}
 
 	err1, err2 := Pipe(conn, c, 1)
-	if err1 != nil || err1 != nil {
+	if err1 != nil || err2 != nil {
 		log.Println(err1, err2)
 	}
 }

@@ -4,6 +4,7 @@ go 1.21.0
 
 require (
 	github.com/envsh/toxera/fedkey v0.0.0-20260524011924-6488539daf77
+	github.com/gorilla/websocket v1.5.3
 	github.com/ipfs/go-cid v0.4.1
 	github.com/klauspost/compress v1.17.9
 	github.com/libp2p/go-msgio v0.3.0
@@ -12,6 +13,7 @@ require (
 	github.com/pion/logging v0.2.4
 	github.com/pion/transport/v2 v2.2.10
 	github.com/pion/turn/v2 v2.1.6
+	lukechampine.com/blake3 v1.3.0
 )
 
 // require github.com/envsh/toxera/fedkey v0.0.0
@@ -55,7 +57,6 @@ require (
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/google/gopacket v1.1.19 // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
@@ -139,7 +140,6 @@ require (
 	golang.org/x/tools v0.24.0 // indirect
 	gonum.org/v1/gonum v0.15.0 // indirect
 	google.golang.org/protobuf v1.34.2 // indirect
-	lukechampine.com/blake3 v1.3.0 // indirect
 )
 
 require (

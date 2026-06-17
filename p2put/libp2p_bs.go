@@ -474,7 +474,12 @@ func myEventSuber(h host.Host, evts ...any) {
 					evt = v
 				}
 			}
-			rawChan <- evt
+			switch e := evt.(type) {
+				case event.EvtLocalReachabilityChanged:
+					rawChan <- evt
+				default:
+					_ = e
+			}
 
 			switch e := evt.(type) {
 			case event.EvtLocalReachabilityChanged:

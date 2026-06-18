@@ -257,6 +257,12 @@ func mainLibp2p(cfg Config) {
 	})
 	turnPool.Start(context.Background())
 
+	p := GetIrohRelayPool()
+	p.AddRelay("wss://usw1-1.relay.n0.iroh-canary.iroh.link/relay")
+	if err := p.Start(context.Background(), currConfig.KeyFile); err != nil {
+		log.Printf("[irohrelay] start: %v", err)
+	}
+
 	select {}
 }
 

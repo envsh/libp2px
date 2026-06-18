@@ -11,6 +11,7 @@ import (
 	"io"
 	"log"
 	"net"
+//	"net/http"
 	"net/url"
 	"sync"
 	"sync/atomic"
@@ -26,7 +27,7 @@ import (
 const relaySubprotocol = "iroh-relay-v2"
 const domainSepChallenge = "iroh-relay handshake v1 challenge signature"
 const maxDatagramPayload = 64000
-const relayPingInterval = 15 * time.Second
+const relayPingInterval = 9 * time.Second
 const streamIDBase = 1000
 
 // Handshake frame types
@@ -46,6 +47,15 @@ const (
 	frameEndpointGone               byte = 8
 	framePing                       byte = 9
 	framePong                       byte = 10
+	frameHealth                     byte = 11
+	frameRestarting                 byte = 12
+	frameStatus                     byte = 13
+)
+
+// Status frame discriminants (RelayToClientMsg::Status)
+const (
+	statusHealthy               = 0
+	statusSameEndpointIdConnected = 1
 )
 
 // Stream flags
@@ -350,6 +360,10 @@ type irohRelayConn struct {
 	stopCh       chan struct{}
 	reconnectNow chan struct{}
 
+	lastRecv    int64  // atomic, UnixNano of last received frame
+	pingSeq     uint64 // atomic, next ping seq
+	pendingPing uint64 // atomic, outstanding ping seq (0=none)
+
 	txBytes   int64
 	rxBytes   int64
 	failCount int32
@@ -361,7 +375,10 @@ func newRelayConn(url string, pool *IrohRelayPool) *irohRelayConn {
 		pool:         pool,
 		createdAt:    time.Now(),
 		stopCh:       make(chan struct{}),
-		reconnectNow: make(chan struct{}),
+		reconnectNow: make(chan struct{}, 1),
+		lastRecv:     time.Now().UnixNano(),
+		pingSeq:      0,
+		pendingPing:  0,
 	}
 }
 
@@ -401,13 +418,33 @@ func (rc *irohRelayConn) runLoop() {
 			rc.shutdown()
 			continue
 		case <-keepAliveTick.C:
-			rc.sendPing()
+			lr := time.Unix(0, atomic.LoadInt64(&rc.lastRecv))
+			if time.Since(lr) > relayPingInterval*3 {
+				log.Printf("[irohrelay] ping timeout %s", rc.url)
+				rc.shutdown()
+				continue
+			}
+			if atomic.LoadUint64(&rc.pendingPing) != 0 {
+				continue
+			}
+			seq := atomic.AddUint64(&rc.pingSeq, 1)
+			atomic.StoreUint64(&rc.pendingPing, seq)
+			buf := make([]byte, 8)
+			binary.LittleEndian.PutUint64(buf, seq)
+			if err := rc.writeFrame(framePing, buf); err != nil {
+				log.Printf("[irohrelay] ping write error %s: %v", rc.url, err)
+				rc.shutdown()
+			}
 		}
 	}
 }
 
 func (rc *irohRelayConn) connect() error {
 	rc.setState(IrohRelayConnecting)
+	select { // drain stale reconnect signal from previous lifecycle
+	case <-rc.reconnectNow:
+	default:
+	}
 	log.Printf("[irohrelay] dial %s ...", rc.url)
 
 	u, err := url.Parse(rc.url)
@@ -421,12 +458,18 @@ func (rc *irohRelayConn) connect() error {
 		Subprotocols:    []string{relaySubprotocol},
 	}
 
-	ws, _, err := dialer.Dial(rc.url, nil)
+	ws, resp, err := dialer.Dial(rc.url, nil)
 	if err != nil {
 		rc.setState(IrohRelayDisconnected)
 		return fmt.Errorf("dial %s: %w", rc.url, err)
 	}
 	ws.SetReadLimit(1 << 20)
+
+	if resp != nil {
+		log.Printf("[irohrelay] %s: upgrade %s proto=%q server=%q",
+			rc.url, resp.Status, resp.Header.Get("Sec-WebSocket-Protocol"),
+			resp.Header.Get("Server"))
+	}
 
 	if ws.Subprotocol() != relaySubprotocol {
 		log.Printf("[irohrelay] %s: subprotocol %q, expected %q", rc.url, ws.Subprotocol(), relaySubprotocol)
@@ -446,6 +489,7 @@ func (rc *irohRelayConn) connect() error {
 
 	go rc.readLoop()
 
+	atomic.StoreInt64(&rc.lastRecv, time.Now().UnixNano())
 	rc.pubkey = rc.pool.localPub
 	rc.failCount = 0
 	rc.setState(IrohRelayAlive)
@@ -513,7 +557,15 @@ func (rc *irohRelayConn) readLoop() {
 			select {
 			case <-rc.stopCh:
 			default:
-				log.Printf("[irohrelay] read error %s: %v", rc.url, err)
+				if closeErr, ok := err.(*websocket.CloseError); ok {
+					log.Printf("[irohrelay] close %s: code=%d text=%q", rc.url, closeErr.Code, closeErr.Text)
+				} else {
+					log.Printf("[irohrelay] read error %s: %v", rc.url, err)
+				}
+				select {
+				case rc.reconnectNow <- struct{}{}:
+				default:
+				}
 			}
 			return
 		}
@@ -521,13 +573,25 @@ func (rc *irohRelayConn) readLoop() {
 			continue
 		}
 
+		// B: any frame = alive
+		atomic.StoreInt64(&rc.lastRecv, time.Now().UnixNano())
+
 		frameType := msg[0]
 		body := msg[1:]
 
 		switch frameType {
 		case framePing:
-			rc.sendPong(body)
+			if err := rc.sendPong(body); err != nil {
+				log.Printf("[irohrelay] send pong error %s: %v", rc.url, err)
+			}
 		case framePong:
+			// A: match seq to clear pending
+			if len(body) >= 8 {
+				seq := binary.LittleEndian.Uint64(body[:8])
+				if seq == atomic.LoadUint64(&rc.pendingPing) {
+					atomic.StoreUint64(&rc.pendingPing, 0)
+				}
+			}
 		case frameRelayToClientDatagram, frameRelayToClientDatagramBatch:
 			rc.handleRecvDatagram(body)
 		case frameEndpointGone:
@@ -536,7 +600,25 @@ func (rc *irohRelayConn) readLoop() {
 				copy(gonePub[:], body[:32])
 				rc.pool.peerGone(gonePub)
 			}
-		case 11, 12, 13:
+		case frameHealth:
+			log.Printf("[irohrelay] %s: Health %q", rc.url, string(body))
+		case frameRestarting:
+			if len(body) >= 8 {
+				reconnectIn := binary.BigEndian.Uint32(body[:4])
+				tryFor := binary.BigEndian.Uint32(body[4:8])
+				log.Printf("[irohrelay] %s: Restarting reconnect_in=%dms try_for=%dms", rc.url, reconnectIn, tryFor)
+			}
+		case frameStatus:
+			if len(body) >= 1 {
+				switch body[0] {
+				case statusHealthy:
+					log.Printf("[irohrelay] %s: Status Healthy", rc.url)
+				case statusSameEndpointIdConnected:
+					log.Printf("[irohrelay] %s: Status SameEndpointIdConnected", rc.url)
+				default:
+					log.Printf("[irohrelay] %s: Status Unknown(%d)", rc.url, body[0])
+				}
+			}
 		default:
 			log.Printf("[irohrelay] %s: unknown frame type %d", rc.url, frameType)
 		}
@@ -577,12 +659,6 @@ func (rc *irohRelayConn) sendDatagram(remotePub [32]byte, payload []byte) error 
 	rc.mu.Lock()
 	defer rc.mu.Unlock()
 	return rc.ws.WriteMessage(websocket.BinaryMessage, msg)
-}
-
-func (rc *irohRelayConn) sendPing() error {
-	ts := make([]byte, 8)
-	binary.BigEndian.PutUint64(ts, uint64(time.Now().UnixMilli()))
-	return rc.writeFrame(framePing, ts)
 }
 
 func (rc *irohRelayConn) sendPong(payload []byte) error {

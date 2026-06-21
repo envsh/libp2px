@@ -94,6 +94,7 @@ func fireClients(evt Event) {
 		select {
 		case ch <- evt:
 		default:
+			log.Printf("[events] drop %s to slow client", evt.Type)
 		}
 	}
 }
@@ -191,6 +192,7 @@ func topicListener(sub *pubsub.Subscription, topic string) {
 				select {
 				case ch <- evt:
 				default:
+					log.Printf("[events] drop pubsub/%s to slow client", topic)
 				}
 			}
 		}

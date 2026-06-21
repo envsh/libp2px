@@ -187,7 +187,7 @@ func onEvents(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	ch := make(chan Event, 20)
+	ch := make(chan Event, 128)
 	clientsMu.Lock()
 	clients[ch] = struct{}{}
 	if len(topics) > 0 {
@@ -203,41 +203,57 @@ func onEvents(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	var events []Event
-	collectDeadline := time.Now().Add(60 * time.Millisecond)
 
-	for len(events) < 20 {
-		remaining := collectDeadline.Sub(time.Now())
-		if remaining <= 0 {
-			break
-		}
-		select {
-		case evt := <-ch:
-			events = append(events, evt)
-		case <-time.After(remaining):
-			goto output
-		case <-r.Context().Done():
-			return
-		}
-	}
-
-output:
-	if len(events) > 0 {
+	writeEvents := func() {
 		w.Header().Set("Content-Type", "application/x-ndjson")
 		for _, e := range events {
 			json.NewEncoder(w).Encode(e)
 		}
-		return
 	}
 
+	// Phase 0: non-blocking drain backlog
+	for len(events) < 20 {
+		select {
+		case evt := <-ch:
+			events = append(events, evt)
+		default:
+			goto afterDrain
+		}
+	}
+	writeEvents()
+	return
+
+afterDrain:
+	if len(events) > 0 {
+		goto collectMore
+	}
+
+	// Phase 1: wait for first event, up to 30s
 	select {
 	case evt := <-ch:
-		w.Header().Set("Content-Type", "application/x-ndjson")
-		json.NewEncoder(w).Encode(evt)
+		events = append(events, evt)
 	case <-time.After(30 * time.Second):
 		w.Header().Set("Content-Type", "application/x-ndjson")
 		json.NewEncoder(w).Encode(map[string]string{"event": "timeout"})
+		return
 	case <-r.Context().Done():
+		return
 	}
+
+collectMore:
+	// Phase 2: collect more with 200ms idle timeout
+	for len(events) < 20 {
+		select {
+		case evt := <-ch:
+			events = append(events, evt)
+		case <-time.After(200 * time.Millisecond):
+			writeEvents()
+			return
+		case <-r.Context().Done():
+			return
+		}
+	}
+	writeEvents()
 }
 
 func onSend(w http.ResponseWriter, r *http.Request) {

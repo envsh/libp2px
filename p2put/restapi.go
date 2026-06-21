@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -187,6 +188,12 @@ func onEvents(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	afterStr := r.URL.Query().Get("after")
+	var after int64
+	if afterStr != "" {
+		after, _ = strconv.ParseInt(afterStr, 10, 64)
+	}
+
 	ch := make(chan Event, 128)
 	clientsMu.Lock()
 	clients[ch] = struct{}{}
@@ -203,6 +210,27 @@ func onEvents(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	var events []Event
+
+	for _, t := range append(topics, "") {
+		if v, ok := topicBuf.Load(t); ok {
+			events = append(events, v.(*eventBuffer).replay(after)...)
+		}
+	}
+	if len(events) > 0 {
+		sort.Slice(events, func(i, j int) bool {
+			return events[i].EventID < events[j].EventID
+		})
+		if len(events) > maxCap {
+			events = events[:maxCap]
+		}
+	}
+	if len(events) > 0 {
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		for _, e := range events {
+			json.NewEncoder(w).Encode(e)
+		}
+		return
+	}
 
 	writeEvents := func() {
 		w.Header().Set("Content-Type", "application/x-ndjson")

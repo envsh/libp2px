@@ -33,9 +33,10 @@ var bootres = &BootNode{
 //////////////
 
 type Event struct {
-	Type  string
-	Topic string
-	Value any
+	EventID int64 `json:"event_id"`
+	Type    string
+	Topic   string
+	Value   any
 }
 
 type pubsubEvent struct {
@@ -46,12 +47,24 @@ type pubsubEvent struct {
 	ReceivedFrom string `json:"ReceivedFrom"`
 }
 
+const (
+	eventBufCap = 128
+	maxCap      = 0
+)
+
+type eventBuffer struct {
+	mu     sync.Mutex
+	events []Event
+	lastID int64
+}
+
 var (
 	rawChan       chan any
 	clients       map[chan Event]struct{}
 	clientsMu     sync.RWMutex
 	clientTopics  map[chan Event][]string
 	topicSubs     sync.Map // map[string]*pubsub.Topic
+	topicBuf      sync.Map // map[string]*eventBuffer
 	discoveryTags sync.Map // set[string]
 
 	eventCallbacks   map[uintptr]func(any)
@@ -68,6 +81,38 @@ func init() {
 	discoveryTags.Store("envsh-d2hub", struct{}{})
 }
 
+func (eb *eventBuffer) push(evt Event) {
+	eb.mu.Lock()
+	defer eb.mu.Unlock()
+	id := time.Now().UnixNano()
+	if id <= eb.lastID {
+		id = eb.lastID + 1
+	}
+	eb.lastID = id
+	evt.EventID = id
+	eb.events = append(eb.events, evt)
+	if len(eb.events) > eventBufCap {
+		eb.events = eb.events[len(eb.events)-eventBufCap:]
+	}
+}
+
+func (eb *eventBuffer) replay(afterID int64) []Event {
+	eb.mu.Lock()
+	defer eb.mu.Unlock()
+	var out []Event
+	for _, e := range eb.events {
+		if e.EventID > afterID {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+func pushToBuf(evt Event) {
+	v, _ := topicBuf.LoadOrStore(evt.Topic, &eventBuffer{})
+	v.(*eventBuffer).push(evt)
+}
+
 func AddDiscoveryTag(tag string) {
 	discoveryTags.Store(tag, struct{}{})
 }
@@ -79,10 +124,12 @@ func RemoveDiscoveryTag(tag string) {
 func broadcastLoop() {
 	for raw := range rawChan {
 		evt := Event{
-			Type:  reflect.TypeOf(raw).String(),
-			Value: raw,
+			EventID: time.Now().UnixNano(),
+			Type:    reflect.TypeOf(raw).String(),
+			Value:   raw,
 		}
 		fireClients(evt)
+		pushToBuf(evt)
 		fireCallbacks(raw)
 	}
 }
@@ -179,7 +226,7 @@ func topicListener(sub *pubsub.Subscription, topic string) {
 		msg.ID = ""
 		msg.Message.Signature = nil
 		msg.Message.Key = nil
-		evt := Event{Type: "pubsub", Topic: topic, Value: pubsubEvent{
+		evt := Event{EventID: time.Now().UnixNano(), Type: "pubsub", Topic: topic, Value: pubsubEvent{
 			From:         string(msg.Message.From),
 			Data:         string(msg.Message.Data),
 			Seqno:        base64.StdEncoding.EncodeToString(msg.Message.Seqno),
@@ -197,6 +244,7 @@ func topicListener(sub *pubsub.Subscription, topic string) {
 			}
 		}
 		clientsMu.RUnlock()
+		pushToBuf(evt)
 
 		fireCallbacks(msg)
 	}

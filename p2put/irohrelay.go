@@ -552,7 +552,14 @@ func (rc *irohRelayConn) readLoop() {
 		default:
 		}
 
-		_, msg, err := rc.ws.ReadMessage()
+		rc.mu.Lock()
+		ws := rc.ws
+		rc.mu.Unlock()
+		if ws == nil {
+			return
+		}
+
+		_, msg, err := ws.ReadMessage()
 		if err != nil {
 			select {
 			case <-rc.stopCh:

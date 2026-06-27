@@ -1,10 +1,12 @@
 package pbtunnel
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"log"
 	"net"
+	"net/http"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -13,6 +15,7 @@ import (
 	"github.com/envsh/libp2px/p2put"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
+	manet "github.com/multiformats/go-multiaddr/net"
 )
 
 var ShouldReject func(network.Stream) bool
@@ -146,6 +149,63 @@ func Dial(peerID string, ctx ...context.Context) (network.Stream, error) {
 		c = context.Background()
 	}
 	return p2put.OpenStream(c, peerID, tunnelProto)
+}
+
+type p2pConn struct {
+	network.Stream
+}
+
+func (c *p2pConn) LocalAddr() net.Addr  { a, _ := manet.ToNetAddr(c.Conn().LocalMultiaddr()); return a }
+func (c *p2pConn) RemoteAddr() net.Addr { a, _ := manet.ToNetAddr(c.Conn().RemoteMultiaddr()); return a }
+
+// 假设协议对端的端口是http proxy端口
+// NewHttpClient creates an *http.Client that tunnels all requests over a p2p
+// stream to peerID via CONNECT handshake. Each request opens a new stream
+// (DisableKeepAlives, MaxIdleConnsPerHost=-1). Usage:
+//
+//	client := pbtunnel.NewHttpClient("12D3KooW...")
+//	resp, err := client.Get("https://example.com")
+func NewHttpClient(peerID string) *http.Client {
+	return &http.Client{
+		Transport: &http.Transport{
+			DisableKeepAlives:   true,
+			MaxIdleConnsPerHost: -1,
+			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				stream, err := Dial(peerID, ctx)
+				if err != nil {
+					return nil, err
+				}
+				_, err = fmt.Fprintf(stream, "CONNECT %s\r\n\r\n", addr)
+				if err != nil {
+					stream.Close()
+					return nil, err
+				}
+				var buf bytes.Buffer
+				var cr, lf int
+				for cr < 2 {
+					var b [1]byte
+					_, err = stream.Read(b[:])
+					if err != nil {
+						stream.Close()
+						return nil, fmt.Errorf("CONNECT response: %w", err)
+					}
+					buf.WriteByte(b[0])
+					if b[0] == '\r' {
+						cr++
+					} else if b[0] == '\n' && cr > lf {
+						lf++
+					} else {
+						cr, lf = 0, 0
+					}
+				}
+				if !bytes.Contains(buf.Bytes(), []byte("200")) {
+					stream.Close()
+					return nil, fmt.Errorf("CONNECT failed: %s", bytes.TrimRight(buf.Bytes(), "\r\n"))
+				}
+				return &p2pConn{Stream: stream}, nil
+			},
+		},
+	}
 }
 
 type DriftServer struct {

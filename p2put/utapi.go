@@ -123,6 +123,18 @@ func RemoveDiscoveryTag(tag string) {
 
 func broadcastLoop() {
 	for raw := range rawChan {
+		v := reflect.ValueOf(raw)
+		for v.Kind() == reflect.Ptr || v.Kind() == reflect.Interface {
+			v = v.Elem()
+		}
+		if v.Kind() == reflect.Struct {
+			var keys []string
+			for i := 0; i < v.NumField(); i++ {
+				keys = append(keys, v.Type().Field(i).Name)
+			}
+			log.Printf("[broadcastLoop] raw keys=%v type=%s", keys, v.Type().String())
+		}
+
 		evt := Event{
 			EventID: time.Now().UnixNano(),
 			Type:    reflect.TypeOf(raw).String(),

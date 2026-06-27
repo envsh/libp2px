@@ -364,6 +364,7 @@ type irohRelayConn struct {
 	pingSeq     uint64 // atomic, next ping seq
 	pendingPing uint64 // atomic, outstanding ping seq (0=none)
 	lastPong    int64  // atomic, UnixNano of last received pong
+	pongCnt     int64  // atomic, total pongs received
 
 	txBytes   int64
 	rxBytes   int64
@@ -381,6 +382,7 @@ func newRelayConn(url string, pool *IrohRelayPool) *irohRelayConn {
 		pingSeq:      0,
 		pendingPing:  0,
 		lastPong:     time.Now().UnixNano(),
+		pongCnt:      0,
 	}
 }
 
@@ -428,7 +430,9 @@ func (rc *irohRelayConn) runLoop() {
 			}
 			if atomic.LoadUint64(&rc.pendingPing) != 0 {
 				lp := time.Unix(0, atomic.LoadInt64(&rc.lastPong))
-				log.Printf("[irohrelay] pendingPing skip, lastPong=%.0fs ago %s", time.Since(lp).Seconds(), rc.url)
+				lr := time.Unix(0, atomic.LoadInt64(&rc.lastRecv))
+				pc := atomic.LoadInt64(&rc.pongCnt)
+				log.Printf("[irohrelay] pendingPing skip, lastPong=%.0fs ago lastRecv=%.0fs ago pongCnt=%d %s", time.Since(lp).Seconds(), time.Since(lr).Seconds(), pc, rc.url)
 				continue
 			}
 			seq := atomic.AddUint64(&rc.pingSeq, 1)
@@ -603,8 +607,9 @@ func (rc *irohRelayConn) readLoop() {
 				if seq == atomic.LoadUint64(&rc.pendingPing) {
 					atomic.StoreUint64(&rc.pendingPing, 0)
 				}
-				atomic.StoreInt64(&rc.lastPong, time.Now().UnixNano())
-			}
+			atomic.StoreInt64(&rc.lastPong, time.Now().UnixNano())
+			atomic.AddInt64(&rc.pongCnt, 1)
+		}
 		case frameRelayToClientDatagram, frameRelayToClientDatagramBatch:
 			rc.handleRecvDatagram(body)
 		case frameEndpointGone:

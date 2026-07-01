@@ -308,10 +308,13 @@ func (api *IpfsHttpTrackerApi) FindPeers(ctx context.Context, peerID string) ([]
 }
 
 func AdvertiseHTTP(ctx context.Context) {
-	cid := StringToCID(currConfig.HubName)
-	if cid == "" {
+	cids := []string{StringToCID(currConfig.HubName)}
+	if cids[0] == "" {
 		log.Println("[advertise] StringToCID failed")
 		return
+	}
+	if c := StringToCID(officalHubName); c != "" {
+		cids = append(cids, c)
 	}
 
 	api := NewIpfsHttpTrackerApi(trackers[0])
@@ -329,8 +332,10 @@ func AdvertiseHTTP(ctx context.Context) {
 				log.Println("[advertise] no private key")
 				continue
 			}
-			if err := api.Provide(ctx, cid, bootres.Host.ID(), bootres.Host.Addrs(), key); err != nil {
-				log.Printf("[advertise] PUT error: %v", err)
+			for _, cid := range cids {
+				if err := api.Provide(ctx, cid, bootres.Host.ID(), bootres.Host.Addrs(), key); err != nil {
+					log.Printf("[advertise] PUT error: %v", err)
+				}
 			}
 
 		case <-ctx.Done():

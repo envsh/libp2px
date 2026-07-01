@@ -71,6 +71,7 @@ func (bsres *BootNode) bootDHT(ctx context.Context) (any, error) {
 	testCID := currConfig.HubName                              // "libp2p-bootstrap-test"
 	rettl := discovery2.TTL(10 * time.Minute)                  // 3h
 	discovery.Advertise(ctx, routingDiscovery, testCID, rettl) // broadcast self
+	discovery.Advertise(ctx, routingDiscovery, officalHubName, rettl)
 
 	if false {
 		pingService := ping.NewPingService(h)

@@ -49,6 +49,8 @@ var dftConfig = Config{
 	Punching:  true,
 }
 
+const officalHubName = "universal-connectivity"
+
 var currConfig = dftConfig
 
 func getFlagSet(cfg *Config) *flag.FlagSet {

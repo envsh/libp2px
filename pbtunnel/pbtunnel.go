@@ -3,7 +3,9 @@ package pbtunnel
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -21,8 +23,10 @@ import (
 var ShouldReject func(network.Stream) bool
 
 const (
-	tunnelProto = "tunnel/1.0"
-	bufSize     = 3072
+	tunnelProto   = "tunnel/1.0"
+	udpTunnelProto = "udptunnel/1.0"
+	bufSize       = 3072
+	udpBufSize    = 65535
 )
 
 var Stats struct {
@@ -49,6 +53,7 @@ func targetAddr() string {
 
 func init() {
 	p2put.MustRegisterProtocol(tunnelProto, handleTunnel, true)
+	p2put.MustRegisterProtocol(udpTunnelProto, handleUDPTunnel, true)
 }
 
 func handleTunnel(s network.Stream) {
@@ -141,6 +146,85 @@ func handleTunnel(s network.Stream) {
 	log.Printf("[pbtunnel] conn=%d closed: sent=%d recv=%d dur=%s", seq, localSent, localRecv, dur.Round(time.Millisecond))
 }
 
+func handleUDPTunnel(s network.Stream) {
+	seq := atomic.AddInt64(&Stats.ConnSeq, 1)
+	start := time.Now()
+	peerid := s.Conn().RemotePeer().ShortString()
+	log.Printf("[pbtunnel] udp conn=%d protocol=%s newed: %v\n", seq, s.Protocol(), peerid)
+
+	if ShouldReject != nil && ShouldReject(s) {
+		s.Reset()
+		return
+	}
+
+	addr := targetAddr()
+	udpConn, err := net.Dial("udp", addr)
+	if err != nil {
+		log.Printf("[pbtunnel] udp dial %s: %v", addr, err)
+		s.Close()
+		return
+	}
+
+	var closeOnce sync.Once
+	closeStream := func() { closeOnce.Do(func() { s.Close() }) }
+	defer closeStream()
+
+	var connCloseOnce sync.Once
+	connClose := func() { connCloseOnce.Do(func() { udpConn.Close() }) }
+	defer connClose()
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	var localSent, localRecv int64
+
+	go func() {
+		defer wg.Done()
+		defer closeStream()
+		hdr := make([]byte, 2)
+		for {
+			_, err := io.ReadFull(s, hdr)
+			if err != nil {
+				return
+			}
+			length := int(binary.BigEndian.Uint16(hdr))
+			buf := make([]byte, length)
+			_, err = io.ReadFull(s, buf)
+			if err != nil {
+				return
+			}
+			wn, _ := udpConn.Write(buf)
+			localSent += int64(wn)
+			atomic.AddInt64(&Stats.BytesSent, int64(wn))
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		defer connClose()
+		buf := make([]byte, udpBufSize)
+		for {
+			n, rerr := udpConn.Read(buf)
+			if n > 0 {
+				hdr := []byte{0, 0}
+				binary.BigEndian.PutUint16(hdr, uint16(n))
+				wn, _ := writen(s, append(hdr, buf[:n]...), n+2)
+				atomic.AddInt64(&Stats.BytesRecv, int64(wn))
+				localRecv += int64(wn)
+				if wn != n+2 {
+					return
+				}
+			}
+			if rerr != nil {
+				return
+			}
+		}
+	}()
+
+	wg.Wait()
+	dur := time.Since(start)
+	log.Printf("[pbtunnel] udp conn=%d closed: sent=%d recv=%d dur=%s", seq, localSent, localRecv, dur.Round(time.Millisecond))
+}
+
 func Dial(peerID string, ctx ...context.Context) (network.Stream, error) {
 	var c context.Context
 	if len(ctx) > 0 {
@@ -211,12 +295,27 @@ func NewHttpClient(peerID string) *http.Client {
 type DriftServer struct {
 	peerID   string
 	listener net.Listener
+	udpConn  net.PacketConn
 	mu       sync.Mutex
 	wg       sync.WaitGroup
+	udpSessions map[string]*udpSession
+	udpTimeout  time.Duration
+	udpCtx      context.Context
+	udpCancel   context.CancelFunc
+}
+
+type udpSession struct {
+	remoteAddr net.Addr
+	stream     network.Stream
+	cancel     context.CancelFunc
+	lastUse    time.Time
 }
 
 func NewDriftServer(peerID string) *DriftServer {
-	return &DriftServer{peerID: peerID}
+	return &DriftServer{
+		peerID:    peerID,
+		udpTimeout: 5 * time.Minute,
+	}
 }
 
 func (s *DriftServer) SwitchPeer(peerID string) string {
@@ -251,11 +350,165 @@ func (s *DriftServer) Listen(addr string) error {
 func (s *DriftServer) Close() error {
 	s.mu.Lock()
 	l := s.listener
+	uc := s.udpConn
+	cancel := s.udpCancel
+	sessions := make([]*udpSession, 0, len(s.udpSessions))
+	for _, sess := range s.udpSessions {
+		sessions = append(sessions, sess)
+	}
 	s.mu.Unlock()
+
+	if cancel != nil {
+		cancel()
+	}
 	if l != nil {
-		return l.Close()
+		l.Close()
+	}
+	if uc != nil {
+		uc.Close()
+	}
+	for _, sess := range sessions {
+		sess.cancel()
+		sess.stream.Close()
+	}
+	s.wg.Wait()
+	return nil
+}
+
+func (s *DriftServer) ListenUDP(addr string) error {
+	pc, err := net.ListenPacket("udp", addr)
+	if err != nil {
+		return err
+	}
+
+	s.mu.Lock()
+	s.udpConn = pc
+	s.udpSessions = make(map[string]*udpSession)
+	s.udpCtx, s.udpCancel = context.WithCancel(context.Background())
+	s.mu.Unlock()
+
+	go s.reapUDP()
+
+	buf := make([]byte, udpBufSize)
+	for {
+		n, remoteAddr, err := pc.ReadFrom(buf)
+		if err != nil {
+			break
+		}
+
+		key := remoteAddr.String()
+
+		s.mu.Lock()
+		sess, exists := s.udpSessions[key]
+		if exists {
+			sess.lastUse = time.Now()
+		}
+		s.mu.Unlock()
+
+		if !exists {
+			sess = s.newUDPSession(remoteAddr)
+			if sess == nil {
+				continue
+			}
+		}
+
+		hdr := []byte{0, 0}
+		binary.BigEndian.PutUint16(hdr, uint16(n))
+		if _, err := writen(sess.stream, append(hdr, buf[:n]...), n+2); err != nil {
+			s.removeUDPSession(key)
+		}
 	}
 	return nil
+}
+
+func (s *DriftServer) newUDPSession(remoteAddr net.Addr) *udpSession {
+	peerhum := s.peerID
+	rdport := (rand.Uint32()/2)%(65535-21) + 21
+	rdproto := fmt.Sprintf("%s%v", udpTunnelProto, rdport)
+
+	stream, err := p2put.OpenStream(context.Background(), peerhum, rdproto)
+	if err != nil {
+		log.Printf("[pbtunnel] udp-session dial %s: %v", peerhum, err)
+		return nil
+	}
+
+	_, cancel := context.WithCancel(s.udpCtx)
+	sess := &udpSession{
+		remoteAddr: remoteAddr,
+		stream:     stream,
+		cancel:     cancel,
+		lastUse:    time.Now(),
+	}
+
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+		defer cancel()
+		hdr := make([]byte, 2)
+		for {
+			_, err := io.ReadFull(stream, hdr)
+			if err != nil {
+				return
+			}
+			length := int(binary.BigEndian.Uint16(hdr))
+			buf := make([]byte, length)
+			_, err = io.ReadFull(stream, buf)
+			if err != nil {
+				return
+			}
+			if _, err := s.udpConn.WriteTo(buf, remoteAddr); err != nil {
+				return
+			}
+			s.mu.Lock()
+			// update lastUse on successful response
+			if existing, ok := s.udpSessions[remoteAddr.String()]; ok && existing == sess {
+				existing.lastUse = time.Now()
+			}
+			s.mu.Unlock()
+		}
+	}()
+
+	key := remoteAddr.String()
+	s.mu.Lock()
+	s.udpSessions[key] = sess
+	s.mu.Unlock()
+
+	return sess
+}
+
+func (s *DriftServer) removeUDPSession(key string) {
+	s.mu.Lock()
+	sess, ok := s.udpSessions[key]
+	if ok {
+		delete(s.udpSessions, key)
+	}
+	s.mu.Unlock()
+	if ok {
+		sess.cancel()
+		sess.stream.Close()
+	}
+}
+
+func (s *DriftServer) reapUDP() {
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-s.udpCtx.Done():
+			return
+		case <-ticker.C:
+			s.mu.Lock()
+			now := time.Now()
+			for key, sess := range s.udpSessions {
+				if now.Sub(sess.lastUse) > s.udpTimeout {
+					delete(s.udpSessions, key)
+					sess.cancel()
+					sess.stream.Close()
+				}
+			}
+			s.mu.Unlock()
+		}
+	}
 }
 
 func (s *DriftServer) handle(conn net.Conn) {

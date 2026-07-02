@@ -355,40 +355,47 @@ func discoveryV4(ctx context.Context) {
 			if bootres == nil || bootres.Host == nil {
 				continue
 			}
-			peers, err := api.FindProviders(ctx, StringToCID(currConfig.HubName))
-			if err != nil {
-				log.Printf("[discovery] query: %v", err)
-				continue
-			}
-			log.Println("http content provider: peers for topic", len(peers), currConfig.HubName)
-			myID := bootres.Host.ID()
-			for _, p := range peers {
-				pid, err := peer.Decode(p.PeerID)
+			names := []string{currConfig.HubName, officalHubName}
+			for _, name := range names {
+				cid := StringToCID(name)
+				if cid == "" {
+					continue
+				}
+				peers, err := api.FindProviders(ctx, cid)
 				if err != nil {
+					log.Printf("[discovery] query %s: %v", name, err)
 					continue
 				}
-				if pid == myID {
-					continue
-				}
-				if bootres.Host.Network().Connectedness(pid) == network.Connected {
-					continue
-				}
-				var maddrs []multiaddr.Multiaddr
-				for _, s := range p.Addrs {
-					m, err := multiaddr.NewMultiaddr(s)
+				log.Println("http content provider: peers for topic", len(peers), name)
+				myID := bootres.Host.ID()
+				for _, p := range peers {
+					pid, err := peer.Decode(p.PeerID)
 					if err != nil {
 						continue
 					}
-					maddrs = append(maddrs, m)
-				}
-				if len(maddrs) == 0 {
-					continue
-				}
-				info := peer.AddrInfo{ID: pid, Addrs: maddrs}
-				if err := bootres.Host.Connect(ctx, info); err != nil {
-					log.Printf("[discovery] connect %s: %v", pid.ShortString(), err)
-				} else {
-					log.Printf("[discovery] connected %s", pid.ShortString())
+					if pid == myID {
+						continue
+					}
+					if bootres.Host.Network().Connectedness(pid) == network.Connected {
+						continue
+					}
+					var maddrs []multiaddr.Multiaddr
+					for _, s := range p.Addrs {
+						m, err := multiaddr.NewMultiaddr(s)
+						if err != nil {
+							continue
+						}
+						maddrs = append(maddrs, m)
+					}
+					if len(maddrs) == 0 {
+						continue
+					}
+					info := peer.AddrInfo{ID: pid, Addrs: maddrs}
+					if err := bootres.Host.Connect(ctx, info); err != nil {
+						log.Printf("[discovery] connect %s: %v", pid.ShortString(), err)
+					} else {
+						log.Printf("[discovery] connected %s", pid.ShortString())
+					}
 				}
 			}
 

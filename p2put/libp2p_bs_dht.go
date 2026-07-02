@@ -87,14 +87,18 @@ func (bsres *BootNode) bootDHT(ctx context.Context) (any, error) {
 func (bootres *BootNode) myDiscoveryV3() {
 	rd, _ := bootres.Discovery.(*routing.RoutingDiscovery)
 	// dht := bootres.DHT
-	tag := currConfig.HubName
 	sec100 := 120 * time.Second
 	known := make(map[string]peer.AddrInfo)
 
 	for i := 0; ; i++ {
 		time.Sleep(3 * time.Second)
 		log.Println("start DHT finding...", i)
-		result := findAndConnect(tag, rd, 0)
+		tags := []string{currConfig.HubName, officalHubName}
+		var result []peer.AddrInfo
+		for _, tag := range tags {
+			r := findAndConnect(tag, rd, 0)
+			result = append(result, r...)
+		}
 		validcnt := 0
 		for _, p := range result {
 			log.Println(p.ID.ShortString(), p.Addrs)

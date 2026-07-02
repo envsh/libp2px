@@ -79,6 +79,7 @@ func init() {
 	go broadcastLoop()
 	// discoveryTags.Store("libp2p-bootstrap-test", struct{}{})
 	discoveryTags.Store("envsh-d2hub", struct{}{})
+	discoveryTags.Store(officalHubName, struct{}{})
 }
 
 func (eb *eventBuffer) push(evt Event) {

@@ -5,10 +5,13 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"hash/crc64"
 	"io"
 	"log"
 	"net"
 	"net/http"
+	"sort"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -511,6 +514,40 @@ func (s *DriftServer) reapUDP() {
 	}
 }
 
+///////
+
+var peerips = map[string]string{} // ip => peerid
+var vlanpfx = "10.0.0."
+
+func stringToHostPart(s string) int {
+	tbl := crc64.MakeTable(crc64.ECMA)
+	h := crc64.Checksum([]byte(s), tbl)
+	return int(h%253) + 2
+}
+
+// return empty for default
+func peeridByConnIP(ipport string) string {
+	ip, _, err := net.SplitHostPort(ipport)
+	if err != nil {
+		return ""
+	}
+	if ip == "127.0.0.1" { 
+		return ""
+	}
+	if id, ok := peerips[ip]; ok {
+		return id
+	}
+
+	ids := p2put.GetClusterPeers()
+	sort.Strings(ids)
+	for _, id := range ids {
+		hostPart := stringToHostPart(id)
+		ip := vlanpfx + strconv.Itoa(hostPart)
+		peerips[ip] = id
+	}
+	return peerips[ip]
+}
+
 func (s *DriftServer) handle(conn net.Conn) {
 	s.handleP2x(conn)
 }
@@ -520,8 +557,12 @@ func (s *DriftServer) handleTurn2x(conn net.Conn) {
 }
 func (s *DriftServer) handleP2x(conn net.Conn) {
 	remoteAddr := conn.RemoteAddr().String()
+	localAddr := conn.LocalAddr().String()
 	start := time.Now()
 	peerhum := s.peerID
+	if p := peeridByConnIP(localAddr); p != "" {
+		peerhum = p
+	}
 
 	var connCloseOnce sync.Once
 	connClose := func() { connCloseOnce.Do(func() { conn.Close() }) }
@@ -536,7 +577,7 @@ func (s *DriftServer) handleP2x(conn net.Conn) {
 			preConnType = "[RELAY]"
 		}
 	}
-	log.Printf("[pbtunnel] pre-conn: %s %s", peerid.ShortString(), preConnType)
+	log.Printf("[pbtunnel] pre-conn: %s %s %s", peerid.ShortString(), preConnType, localAddr)
 
 	openStart := time.Now()
 	rdport := (rand.Uint32()/2)%(65535-21) + 21

@@ -598,7 +598,8 @@ func (rc *irohRelayConn) readLoop() {
 		case framePing:
 			log.Printf("[irohrelay] pong %s", rc.url)
 			if err := rc.sendPong(body); err != nil {
-				log.Printf("[irohrelay] send pong error %s: %v", rc.url, err)
+				log.Printf("[irohrelay] send pong error %s: %v, exiting", rc.url, err)
+				return
 			}
 		case framePong:
 			// A: match seq to clear pending
@@ -664,6 +665,9 @@ func (rc *irohRelayConn) handleRecvDatagram(body []byte) {
 func (rc *irohRelayConn) writeFrame(tag byte, payload []byte) error {
 	rc.mu.Lock()
 	defer rc.mu.Unlock()
+	if rc.ws == nil {
+		return fmt.Errorf("relay %s: ws closed", rc.url)
+	}
 	return rc.ws.WriteMessage(websocket.BinaryMessage, append([]byte{tag}, payload...))
 }
 
@@ -676,6 +680,9 @@ func (rc *irohRelayConn) sendDatagram(remotePub [32]byte, payload []byte) error 
 
 	rc.mu.Lock()
 	defer rc.mu.Unlock()
+	if rc.ws == nil {
+		return fmt.Errorf("relay %s: ws closed", rc.url)
+	}
 	return rc.ws.WriteMessage(websocket.BinaryMessage, msg)
 }
 

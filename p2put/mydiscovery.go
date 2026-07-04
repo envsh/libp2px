@@ -318,6 +318,7 @@ func AdvertiseHTTP(ctx context.Context) {
 	}
 
 	api := NewIpfsHttpTrackerApi(trackers[0])
+	jamiAPI := NewJamiTrackerApi(defaultJamiProxy)
 	ticker := time.NewTicker(advertiseInterval)
 	defer ticker.Stop()
 
@@ -336,6 +337,9 @@ func AdvertiseHTTP(ctx context.Context) {
 				if err := api.Provide(ctx, cid, bootres.Host.ID(), bootres.Host.Addrs(), key); err != nil {
 					log.Printf("[advertise] PUT error: %v", err)
 				}
+				if err := jamiAPI.Provide(ctx, cid, bootres.Host.ID(), bootres.Host.Addrs()); err != nil {
+					log.Printf("[advertise] Jami PUT error: %v", err)
+				}
 			}
 
 		case <-ctx.Done():
@@ -346,6 +350,7 @@ func AdvertiseHTTP(ctx context.Context) {
 
 func discoveryV4(ctx context.Context) {
 	api := NewIpfsHttpTrackerApi(trackers[0])
+	jamiAPI := NewJamiTrackerApi(defaultJamiProxy)
 	ticker := time.NewTicker(discoverInterval)
 	defer ticker.Stop()
 
@@ -364,7 +369,6 @@ func discoveryV4(ctx context.Context) {
 				peers, err := api.FindProviders(ctx, cid)
 				if err != nil {
 					log.Printf("[discovery] query %s: %v", name, err)
-					continue
 				}
 				log.Println("http content provider: peers for topic", len(peers), name)
 				myID := bootres.Host.ID()
@@ -396,6 +400,14 @@ func discoveryV4(ctx context.Context) {
 					} else {
 						log.Printf("[discovery] connected %s", pid.ShortString())
 					}
+				}
+
+				jamiPeers, jErr := jamiAPI.FindProviders(ctx, cid)
+				if jErr != nil {
+					log.Printf("[discovery] Jami query %s: %v", name, jErr)
+				} else if len(jamiPeers) > 0 {
+					log.Println("jami dht: peers for topic", len(jamiPeers), name)
+					// peers = append(peers, jamiPeers...)
 				}
 			}
 

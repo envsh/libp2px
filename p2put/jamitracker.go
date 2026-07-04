@@ -1,0 +1,186 @@
+package p2put
+
+import (
+	"bufio"
+	"context"
+	"crypto/sha1"
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
+
+	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/multiformats/go-multiaddr"
+)
+
+const defaultJamiProxy = "http://dhtproxy.jami.net:80"
+
+type JamiTrackerApi struct {
+	baseURL string
+	cli     *http.Client
+}
+
+func NewJamiTrackerApi(baseURL string) *JamiTrackerApi {
+	return &JamiTrackerApi{
+		baseURL: strings.TrimRight(baseURL, "/"),
+		cli:     http.DefaultClient,
+	}
+}
+
+func (api *JamiTrackerApi) hashKey(key string) string {
+	h := sha1.Sum([]byte(key))
+	return fmt.Sprintf("%x", h)
+}
+
+func (api *JamiTrackerApi) Provide(ctx context.Context, key string, pid peer.ID, addrs []multiaddr.Multiaddr) error {
+	hash := api.hashKey(key)
+
+	addrStrs := make([]string, len(addrs))
+	for i, a := range addrs {
+		addrStrs[i] = a.String()
+	}
+
+	peerInfo := FoundPeer{PeerID: pid.String(), Addrs: addrStrs}
+	peerJSON, err := json.Marshal(peerInfo)
+	if err != nil {
+		return fmt.Errorf("marshal peer: %w", err)
+	}
+
+	dataB64 := base64.StdEncoding.EncodeToString(peerJSON)
+	body := fmt.Sprintf(`{"data":"%s","id":0,"type":0}`, dataB64)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		api.baseURL+"/key/"+hash, strings.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := api.cli.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 300 {
+		b, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("POST %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+	}
+	return nil
+}
+
+func (api *JamiTrackerApi) FindProviders(ctx context.Context, key string) ([]FoundPeer, error) {
+	hash := api.hashKey(key)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		api.baseURL+"/key/"+hash, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := api.cli.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var out []FoundPeer
+	for _, line := range strings.Split(strings.TrimSpace(string(body)), "\n") {
+		if line == "" {
+			continue
+		}
+		var val struct {
+			Data string `json:"data"`
+		}
+		if err := json.Unmarshal([]byte(line), &val); err != nil {
+			continue
+		}
+		if val.Data == "" {
+			continue
+		}
+		raw, err := base64.StdEncoding.DecodeString(val.Data)
+		if err != nil {
+			continue
+		}
+		var fp FoundPeer
+		if err := json.Unmarshal(raw, &fp); err != nil {
+			continue
+		}
+		if fp.PeerID == "" {
+			continue
+		}
+		out = append(out, fp)
+	}
+	return out, nil
+}
+
+func (api *JamiTrackerApi) Ping(ctx context.Context) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		api.baseURL+"/node/info", nil)
+	if err != nil {
+		return err
+	}
+	resp, err := api.cli.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		return fmt.Errorf("Ping: %d", resp.StatusCode)
+	}
+	return nil
+}
+
+func (api *JamiTrackerApi) Listen(ctx context.Context, topic string, cb func(FoundPeer)) error {
+	hash := api.hashKey(topic)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		api.baseURL+"/key/"+hash+"/listen", nil)
+	if err != nil {
+		return err
+	}
+
+	resp, err := api.cli.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	scanner := bufio.NewScanner(resp.Body)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		var val struct {
+			Data    string `json:"data"`
+			Expired *bool  `json:"expired,omitempty"`
+		}
+		if err := json.Unmarshal([]byte(line), &val); err != nil {
+			continue
+		}
+		if val.Data == "" {
+			continue
+		}
+		raw, err := base64.StdEncoding.DecodeString(val.Data)
+		if err != nil {
+			continue
+		}
+		var fp FoundPeer
+		if err := json.Unmarshal(raw, &fp); err != nil {
+			continue
+		}
+		if fp.PeerID == "" {
+			continue
+		}
+		cb(fp)
+	}
+	return scanner.Err()
+}

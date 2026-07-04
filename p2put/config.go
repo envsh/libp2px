@@ -38,10 +38,11 @@ type Config struct {
 
 // default for vps deploy that not cmdline
 var dftConfig = Config{
-	KeyFile:   "key.txt",
-	HubName:   "envsh-d2hub", // p2p to daemon/distribute
-	UserAgent: "universal-connectivity/envsh-d2hub",
-	Dht:       true,
+	KeyFile:    "key.txt",
+	HubName:    "envsh-d2hub",
+	UserAgent:  "universal-connectivity/envsh-d2hub",
+	ListenPort: defaultListenPort,
+	Dht:        true,
 	ResRate:   0.2,
 	Relay:     true,
 	NAT:       true,
@@ -56,7 +57,7 @@ var currConfig = dftConfig
 func getFlagSet(cfg *Config) *flag.FlagSet {
 	fs := flag.NewFlagSet("libp2p-node", flag.ContinueOnError)
 	fs.StringVar(&cfg.KeyFile, "k", "key.txt", "keyring file")
-	fs.IntVar(&cfg.ListenPort, "l", 0, "TCP listen port - 4001 or random")
+	fs.IntVar(&cfg.ListenPort, "l", defaultListenPort, "TCP listen port (default 4001)")
 	fs.BoolVar(&cfg.IsMobile, "m", cfg.IsMobile, "Run mobile mode, less bandwidth")
 
 	return fs

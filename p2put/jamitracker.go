@@ -17,6 +17,12 @@ import (
 
 const defaultJamiProxy = "http://dhtproxy.jami.net:80"
 
+// fallbackJamiProxy 硬编码当前解析到的 IP 作为备选。
+// 部分节点上 DNS 解析更新不及时，当 dhtproxy.jami.net
+// 的 A 记录变更后仍连接旧 IP 导致 dial refused，此时
+// 直接使用已知可达的 IP 地址重试。
+const fallbackJamiProxy = "http://141.94.96.2:80"
+
 type JamiTrackerApi struct {
 	baseURL string
 	cli     *http.Client
@@ -51,136 +57,161 @@ func (api *JamiTrackerApi) Provide(ctx context.Context, key string, pid peer.ID,
 	dataB64 := base64.StdEncoding.EncodeToString(peerJSON)
 	body := fmt.Sprintf(`{"data":"%s","id":0,"type":0}`, dataB64)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		api.baseURL+"/key/"+hash, strings.NewReader(body))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
+	urls := []string{api.baseURL, fallbackJamiProxy}
+	var lastErr error
+	for _, base := range urls {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+			base+"/key/"+hash, strings.NewReader(body))
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Content-Type", "application/json")
 
-	resp, err := api.cli.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
+		resp, err := api.cli.Do(req)
+		if err != nil {
+			lastErr = err
+			continue
+		}
 
-	if resp.StatusCode >= 300 {
-		b, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("POST %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+		if resp.StatusCode >= 300 {
+			b, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			return fmt.Errorf("POST %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+		}
+		resp.Body.Close()
+		return nil
 	}
-	return nil
+	return lastErr
 }
 
 func (api *JamiTrackerApi) FindProviders(ctx context.Context, key string) ([]FoundPeer, error) {
 	hash := api.hashKey(key)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
-		api.baseURL+"/key/"+hash, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := api.cli.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	var out []FoundPeer
-	for _, line := range strings.Split(strings.TrimSpace(string(body)), "\n") {
-		if line == "" {
-			continue
-		}
-		var val struct {
-			Data string `json:"data"`
-		}
-		if err := json.Unmarshal([]byte(line), &val); err != nil {
-			continue
-		}
-		if val.Data == "" {
-			continue
-		}
-		raw, err := base64.StdEncoding.DecodeString(val.Data)
+	urls := []string{api.baseURL, fallbackJamiProxy}
+	var lastErr error
+	for _, base := range urls {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+			base+"/key/"+hash, nil)
 		if err != nil {
+			return nil, err
+		}
+
+		resp, err := api.cli.Do(req)
+		if err != nil {
+			lastErr = err
 			continue
 		}
-		var fp FoundPeer
-		if err := json.Unmarshal(raw, &fp); err != nil {
-			continue
+
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			return nil, err
 		}
-		if fp.PeerID == "" {
-			continue
+
+		var out []FoundPeer
+		for _, line := range strings.Split(strings.TrimSpace(string(body)), "\n") {
+			if line == "" {
+				continue
+			}
+			var val struct {
+				Data string `json:"data"`
+			}
+			if err := json.Unmarshal([]byte(line), &val); err != nil {
+				continue
+			}
+			if val.Data == "" {
+				continue
+			}
+			raw, err := base64.StdEncoding.DecodeString(val.Data)
+			if err != nil {
+				continue
+			}
+			var fp FoundPeer
+			if err := json.Unmarshal(raw, &fp); err != nil {
+				continue
+			}
+			if fp.PeerID == "" {
+				continue
+			}
+			out = append(out, fp)
 		}
-		out = append(out, fp)
+		return out, nil
 	}
-	return out, nil
+	return nil, lastErr
 }
 
 func (api *JamiTrackerApi) Ping(ctx context.Context) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
-		api.baseURL+"/node/info", nil)
-	if err != nil {
-		return err
+	urls := []string{api.baseURL, fallbackJamiProxy}
+	var lastErr error
+	for _, base := range urls {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+			base+"/node/info", nil)
+		if err != nil {
+			return err
+		}
+		resp, err := api.cli.Do(req)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		resp.Body.Close()
+		if resp.StatusCode >= 300 {
+			return fmt.Errorf("Ping: %d", resp.StatusCode)
+		}
+		return nil
 	}
-	resp, err := api.cli.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 300 {
-		return fmt.Errorf("Ping: %d", resp.StatusCode)
-	}
-	return nil
+	return lastErr
 }
 
 func (api *JamiTrackerApi) Listen(ctx context.Context, topic string, cb func(FoundPeer)) error {
 	hash := api.hashKey(topic)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
-		api.baseURL+"/key/"+hash+"/listen", nil)
-	if err != nil {
-		return err
-	}
-
-	resp, err := api.cli.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	scanner := bufio.NewScanner(resp.Body)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
-			continue
-		}
-		var val struct {
-			Data    string `json:"data"`
-			Expired *bool  `json:"expired,omitempty"`
-		}
-		if err := json.Unmarshal([]byte(line), &val); err != nil {
-			continue
-		}
-		if val.Data == "" {
-			continue
-		}
-		raw, err := base64.StdEncoding.DecodeString(val.Data)
+	urls := []string{api.baseURL, fallbackJamiProxy}
+	var lastErr error
+	for _, base := range urls {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+			base+"/key/"+hash+"/listen", nil)
 		if err != nil {
+			return err
+		}
+
+		resp, err := api.cli.Do(req)
+		if err != nil {
+			lastErr = err
 			continue
 		}
-		var fp FoundPeer
-		if err := json.Unmarshal(raw, &fp); err != nil {
-			continue
+
+		scanner := bufio.NewScanner(resp.Body)
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if line == "" {
+				continue
+			}
+			var val struct {
+				Data    string `json:"data"`
+				Expired *bool  `json:"expired,omitempty"`
+			}
+			if err := json.Unmarshal([]byte(line), &val); err != nil {
+				continue
+			}
+			if val.Data == "" {
+				continue
+			}
+			raw, err := base64.StdEncoding.DecodeString(val.Data)
+			if err != nil {
+				continue
+			}
+			var fp FoundPeer
+			if err := json.Unmarshal(raw, &fp); err != nil {
+				continue
+			}
+			if fp.PeerID == "" {
+				continue
+			}
+			cb(fp)
 		}
-		if fp.PeerID == "" {
-			continue
-		}
-		cb(fp)
+		resp.Body.Close()
+		return scanner.Err()
 	}
-	return scanner.Err()
+	return lastErr
 }

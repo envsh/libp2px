@@ -262,14 +262,16 @@ func NewHttpClient(peerID string) *http.Client {
 				if err != nil {
 					return nil, err
 				}
-				_, err = fmt.Fprintf(stream, "CONNECT %s\r\n\r\n", addr)
+				log.Println("pbtunnel sending CONNECT", addr, peerID, "...")
+				_, err = fmt.Fprintf(stream, "CONNECT %s HTTP/1.1\r\n\r\n", addr)
 				if err != nil {
 					stream.Close()
 					return nil, err
 				}
 				var buf bytes.Buffer
-				var cr, lf int
-				for cr < 2 {
+				var cnter int
+				for cnter < 9999 {
+					cnter ++
 					var b [1]byte
 					_, err = stream.Read(b[:])
 					if err != nil {
@@ -277,15 +279,15 @@ func NewHttpClient(peerID string) *http.Client {
 						return nil, fmt.Errorf("CONNECT response: %w", err)
 					}
 					buf.WriteByte(b[0])
-					if b[0] == '\r' {
-						cr++
-					} else if b[0] == '\n' && cr > lf {
-						lf++
-					} else {
-						cr, lf = 0, 0
+					if buf.Len() >= 4 && bytes.HasSuffix(buf.Bytes(), []byte("\r\n\r\n")) {
+						break
 					}
 				}
+				if cnter >= 9999 {
+					return nil, fmt.Errorf("CONNECT failed: no 200 continue or establish %d", cnter)
+				}
 				if !bytes.Contains(buf.Bytes(), []byte("200")) {
+					log.Println("pbtunnel:", string(buf.Bytes()))
 					stream.Close()
 					return nil, fmt.Errorf("CONNECT failed: %s", bytes.TrimRight(buf.Bytes(), "\r\n"))
 				}

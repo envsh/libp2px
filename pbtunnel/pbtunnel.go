@@ -518,7 +518,10 @@ func (s *DriftServer) reapUDP() {
 
 ///////
 
-var peerips = map[string]string{} // ip => peerid
+var (
+	peerips   = map[string]string{} // ip => peerid
+	peeripsMu sync.Mutex
+)
 var vlanpfx = "10.0.0."
 
 func stringToHostPart(s string) int {
@@ -529,14 +532,18 @@ func stringToHostPart(s string) int {
 
 // return empty for default
 func peeridByConnIP(ipport string) string {
-	ip, _, err := net.SplitHostPort(ipport)
+	rawIP, _, err := net.SplitHostPort(ipport)
 	if err != nil {
 		return ""
 	}
-	if ip == "127.0.0.1" { 
+	if rawIP == "127.0.0.1" {
 		return ""
 	}
-	if id, ok := peerips[ip]; ok {
+
+	peeripsMu.Lock()
+	defer peeripsMu.Unlock()
+
+	if id, ok := peerips[rawIP]; ok {
 		return id
 	}
 
@@ -544,10 +551,10 @@ func peeridByConnIP(ipport string) string {
 	sort.Strings(ids)
 	for _, id := range ids {
 		hostPart := stringToHostPart(id)
-		ip := vlanpfx + strconv.Itoa(hostPart)
-		peerips[ip] = id
+		mappedIP := vlanpfx + strconv.Itoa(hostPart)
+		peerips[mappedIP] = id
 	}
-	return peerips[ip]
+	return peerips[rawIP]
 }
 
 func (s *DriftServer) handle(conn net.Conn) {

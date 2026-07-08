@@ -596,7 +596,7 @@ func (rc *irohRelayConn) readLoop() {
 
 		switch frameType {
 		case framePing:
-			log.Printf("[irohrelay] pong %s", rc.url)
+			log.Printf(">> [irohrelay] pong %s", rc.url)
 			if err := rc.sendPong(body); err != nil {
 				log.Printf("[irohrelay] send pong error %s: %v, exiting", rc.url, err)
 				return
@@ -620,7 +620,7 @@ func (rc *irohRelayConn) readLoop() {
 				rc.pool.peerGone(gonePub)
 			}
 		case frameHealth:
-			log.Printf("[irohrelay] %s: Health %q", rc.url, string(body))
+			log.Printf("<< [irohrelay] %s: Health %q", rc.url, string(body))
 		case frameRestarting:
 			if len(body) >= 8 {
 				reconnectIn := binary.BigEndian.Uint32(body[:4])
@@ -639,7 +639,7 @@ func (rc *irohRelayConn) readLoop() {
 				}
 			}
 		default:
-			log.Printf("[irohrelay] %s: unknown frame type %d", rc.url, frameType)
+			log.Printf("<< [irohrelay] %s: unknown frame type %d", rc.url, frameType)
 		}
 	}
 }

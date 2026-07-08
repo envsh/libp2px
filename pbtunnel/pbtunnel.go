@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -228,6 +229,7 @@ func handleUDPTunnel(s network.Stream) {
 	log.Printf("[pbtunnel] udp conn=%d closed: sent=%d recv=%d dur=%s", seq, localSent, localRecv, dur.Round(time.Millisecond))
 }
 
+// peerID format: 123xxx[:port]
 func Dial(peerID string, ctx ...context.Context) (network.Stream, error) {
 	var c context.Context
 	if len(ctx) > 0 {
@@ -235,7 +237,16 @@ func Dial(peerID string, ctx ...context.Context) (network.Stream, error) {
 	} else {
 		c = context.Background()
 	}
-	return p2put.OpenStream(c, peerID, tunnelProto)
+	arr := strings.Split(peerID, ":")
+	protoWithPort := fmt.Sprintf("%s%v", tunnelProto, tunnelPort)
+	if len(arr) == 2 {
+		protoWithPort = fmt.Sprintf("%s%v", tunnelProto, arr[1])
+		peerID = arr[0]
+	} else if len(arr) == 1{
+	} else {
+		log.Panicln("wtf", arr)
+	}
+	return p2put.OpenStream(c, peerID, protoWithPort)
 }
 
 type p2pConn struct {

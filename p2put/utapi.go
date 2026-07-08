@@ -136,11 +136,19 @@ func broadcastLoop() {
 			log.Printf("[broadcastLoop] raw keys=%v type=%s", keys, v.Type().String())
 		}
 
-		evt := Event{
-			EventID: time.Now().UnixNano(),
-			Type:    reflect.TypeOf(raw).String(),
-			Value:   raw,
+		evt := Event{EventID: time.Now().UnixNano()}
+		if e, ok := raw.(Event); ok {
+			// raw 已是 Event（来自 pubsubfw 等），直接提取字段，
+			// 避免双层包装成 Event{Type:"p2put.Event", Value:Event{...}}
+			evt.Type = e.Type
+			evt.Topic = e.Topic
+			evt.Value = e.Value
+		} else {
+			// raw 是 libp2p 原生事件等非 Event 类型，照旧包裹
+			evt.Type = reflect.TypeOf(raw).String()
+			evt.Value = raw
 		}
+
 		fireClients(evt)
 		pushToBuf(evt)
 		fireCallbacks(raw)

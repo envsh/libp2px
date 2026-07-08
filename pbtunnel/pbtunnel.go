@@ -48,11 +48,33 @@ var (
 func SetTarget(addr string) { tunnelTarget = addr }
 func SetPort(port int)       { tunnelPort = port }
 
-func targetAddr() string {
+// targetAddr returns the local TCP address for tunnel forwarding.
+// When proto carries a port suffix after tunnelProto (e.g.
+// "/d2hub/tunnel/1.09339" → port 9339), it overrides tunnelPort.
+func targetAddr(proto ...string) string {
 	if tunnelTarget != "" {
 		return tunnelTarget
 	}
-	return fmt.Sprintf("127.0.0.1:%d", tunnelPort)
+	port := tunnelPort
+	if len(proto) < 1 {
+		// no protocol string, use tunnelPort default
+	} else {
+		idx := strings.Index(string(proto[0]), tunnelProto)
+		if idx < 0 {
+			log.Panicln("targetAddr: proto missing tunnelProto:", proto[0])
+		}
+		suffix := string(proto[0])[idx+len(tunnelProto):]
+		if suffix == "" || suffix == "0" {
+			// no port (legacy "tunnel/1.0") or zero, use tunnelPort default
+		} else {
+			n, err := strconv.Atoi(suffix)
+			if err != nil {
+				log.Panicln("targetAddr: bad port suffix:", suffix, "proto:", proto[0])
+			}
+			port = n
+		}
+	}
+	return fmt.Sprintf("127.0.0.1:%d", port)
 }
 
 func init() {
@@ -71,7 +93,7 @@ func handleTunnel(s network.Stream) {
 		return
 	}
 
-	addr := targetAddr()
+	addr := targetAddr(string(s.Protocol()))
 
 	conn, err := net.DialTimeout("tcp", addr, 30*time.Second)
 	if err != nil {
@@ -441,6 +463,7 @@ func (s *DriftServer) newUDPSession(remoteAddr net.Addr) *udpSession {
 	peerhum := s.peerID
 	rdport := (rand.Uint32()/2)%(65535-21) + 21
 	rdproto := fmt.Sprintf("%s%v", udpTunnelProto, rdport)
+	rdproto = tunnelProto // disable rand port now
 
 	stream, err := p2put.OpenStream(context.Background(), peerhum, rdproto)
 	if err != nil {
@@ -602,6 +625,7 @@ func (s *DriftServer) handleP2x(conn net.Conn) {
 	openStart := time.Now()
 	rdport := (rand.Uint32()/2)%(65535-21) + 21
 	rdproto := fmt.Sprintf("%s%v", tunnelProto, rdport)
+	rdproto = tunnelProto // disable rand port now
 	p2pStream, err := p2put.OpenStream(context.Background(), peerhum, rdproto)
 	openDur := time.Since(openStart)
 	log.Printf("[pbtunnel] drift dial %s: %v (open=%s) %s %s", peerid.ShortString(), err, openDur.Round(time.Millisecond), rdproto, preConnType)

@@ -1,13 +1,12 @@
 package p2put
 
 var manualRelays = []string{
+	// bootstrap node
+	// "/ip4/104.131.131.82/tcp/4001/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",
 	// 50
 	"/ip4/47.108.58.134/tcp/4001/p2p/12D3KooWL9SUUXmQ4DcxsQ1k41h29vcMJLHJMukQTtez3jKCKXQ4",
-	// "/ip4/104.131.131.82/tcp/4001/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",
 	// RESERVATION_REFUSED
 	// "/ip4/107.191.52.146/tcp/4001/p2p/12D3KooWETqQmVb6uV9QPTTFSN6bgNoNG2smAanpeNqnwscXoiSw",
-	// 275ms
-	// "/ip4/192.99.15.222/tcp/4001/p2p/12D3KooWCSnrFdgX3Z1doKeuo3dxETtDJvE2ntbtb6k1KBAnHWes",
 	// 63ms,kr
 	"/ip4/27.102.137.209/tcp/4001/p2p/12D3KooWGGhWDDdq8gWDX8nJ2YiNgrMfepNAusmfxKhoQfbRrYDf",
 	// 200ms

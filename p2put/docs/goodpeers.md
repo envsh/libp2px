@@ -109,6 +109,8 @@ jp
 
 21:35:55 libp2p_bs.go:474: [goodpeer] /ip4/65.109.90.222/tcp/4001/p2p/12D3KooWPBQwyEPcmwXusmi6GEkBVqx2FasftPbq12FAAPgfi4hr latency=197.571237ms
 
+00:18:46 libp2p_bs.go:479: [goodpeer<200] latency=197.963745ms cnt=47 /ip4/65.108.192.161/tcp/4001/p2p/12D3KooWHA8e2Thc1xf63qu6tp5ASsqJH57MqqvJhySc4cM1GtnL
+
 21:50:25 libp2p_bs.go:474: [goodpeer] /ip4/45.63.61.139/tcp/4001/p2p/12D3KooWSz4qmxKWq4Fg2SVo5FX4N9U8BYY2Y4zR76sdGCH52n75 latency=200.378865ms
 
 23:16:39 libp2p_bs.go:474: [goodpeer] /ip4/193.180.211.158/tcp/4001/p2p/12D3KooWLzy6mZxTTMCtCo9QFbAz3eqTeFeKFPKUw3iSDg93xwwj latency=200.297936ms
@@ -121,57 +123,23 @@ jp
 
 23:28:57 libp2p_bs.go:474: [goodpeer] /ip4/167.235.9.209/tcp/4001/p2p/12D3KooWMWTgKkzWcQH3PkoWLii2Q69nFPQjBWVTHYxhYZ9ZT4qZ latency=201.616388ms
 
-22:34:01 libp2p_bs.go:474: [goodpeer] /ip4/3.71.42.170/tcp/4001/p2p/12D3KooWAUnNqnnZrGRvQwSffBDZTHx6yyj5ZmtsEn3Y6rznPFV3 latency=202.369666ms
 
-22:22:44 libp2p_bs.go:474: [goodpeer] /ip4/35.87.180.248/tcp/4001/p2p/12D3KooWH2kcFP7ZzwHiRhtaZEowLnTyCTpfA42Vdt2oexEPyH59 latency=203.193523ms
-
-23:26:55 libp2p_bs.go:474: [goodpeer] /ip4/192.3.231.225/tcp/4001/p2p/12D3KooWSpgVx6njMMPePo8iZC72m62BLJk6ugt9boBdeVEXdujX latency=204.081343ms
-
-22:32:12 libp2p_bs.go:474: [goodpeer] /ip4/194.233.88.206/tcp/4001/p2p/12D3KooWGZRVExwrV2d1M6o7gWoQg9nUJTR5L4L2Dg6c7FZ9yKr6 latency=204.619317ms
-
-21:56:00 libp2p_bs.go:474: [goodpeer] /ip4/136.243.40.163/tcp/4001/p2p/12D3KooWPuS7Mj9Xu6MZGf2tucmuzgr27FWQ3fYtFVoyZKFYPHLV latency=205.055813ms
-
-22:49:37 libp2p_bs.go:474: [goodpeer] /ip4/83.31.213.200/tcp/4001/p2p/12D3KooWP4L3KvyUmHaNVTTvkvf9weBoEFXLq58s6tz51gRLaVLx latency=205.091045ms
-
-22:14:25 libp2p_bs.go:474: [goodpeer] /ip4/31.97.48.104/tcp/4001/p2p/12D3KooWHzuuVgmR4CryxcpDSetigSXFCAv4D9wTLsdPYdfieJEu latency=205.988158ms
-
-22:19:10 libp2p_bs.go:474: [goodpeer] /ip4/93.115.28.108/tcp/4001/p2p/12D3KooWF3xsShkDV18oUeWYjuVcRhjSY8GW1XZa8kGo1eaeRQr8 latency=206.326931ms
-
-21:55:45 libp2p_bs.go:474: [goodpeer] /ip4/93.127.133.184/tcp/4001/tls/ws/p2p/12D3KooWDBq25L5gi2TrM7whTb2T5FSzSamYLw1Xtd5Az59VPskU latency=207.304874ms
-
-22:25:57 libp2p_bs.go:474: [goodpeer] /ip4/167.235.9.209/tcp/4001/p2p/12D3KooWMWTgKkzWcQH3PkoWLii2Q69nFPQjBWVTHYxhYZ9ZT4qZ latency=207.379404ms
-
-21:34:48 libp2p_bs.go:474: [goodpeer] /ip4/143.110.208.244/tcp/4001/p2p/12D3KooWMByew5WZuPt5y2ifcwbdcKX8JPGXW8dptGdR3BLoJX9j latency=208.616095ms
-
-* /ip4/65.109.60.254/tcp/4001 12D3KooWL96RJHMjvPzkDzEwSBNei4Ftak7n8gF5Tfn8Dc1cSYQn
-
-
-08:28:55 libp2p_bs.go:646: << {Peer:12D3KooWSXP8vGvbTaUTUGxncjgCEAeoPQnTHcBLgWRtms1sm3eQ Connectedness:Connected}
+150ms, but not stable
 08:28:57 libp2p_bs.go:646: << {Peer:12D3KooWETqQmVb6uV9QPTTFSN6bgNoNG2smAanpeNqnwscXoiSw Connectedness:Connected}
 08:28:57 libp2p_bs.go:656: [goodpeer] connected: <peer.ID 12*cXoiSw> addr=/ip4/107.191.52.146/tcp/4001
+
+220ms
 08:28:57 libp2p_bs.go:646: << {Peer:12D3KooWL96RJHMjvPzkDzEwSBNei4Ftak7n8gF5Tfn8Dc1cSYQn Connectedness:Connected}
 08:28:57 libp2p_bs.go:656: [goodpeer] connected: <peer.ID 12*1cSYQn> addr=/ip4/65.109.60.254/tcp/4001
-08:28:57 libp2p_bs.go:646: << {Peer:QmVo6ZqzkfdDDcPY8VszPVsLFaimcD4WcEBpPNQZTdyGfm Connectedness:Connected}
+
+220ms
 08:28:57 libp2p_bs.go:646: << {Peer:12D3KooWLd7aTPQJBEh81qDUwijhKLqJs4T3xSd3zzyC9ZZ7gUNh Connectedness:Connected}
 08:28:57 libp2p_bs.go:656: [goodpeer] connected: <peer.ID 12*Z7gUNh> addr=/ip4/216.128.185.210/tcp/4001
-08:28:57 libp2p_bs.go:646: << {Peer:12D3KooWGRFDB7Ho8vNQ21tDRHk2HmJx319XEuMMwvh3CkhQALDF Connectedness:Connected}
-[goodpeer] connected: addr=/ip4/157.90.32.77/tcp/4001/p2p/12D3KooWGRFDB7Ho8vNQ21tDRHk2HmJx319XEuMMwvh3CkhQALDF
-08:28:58 libp2p_bs.go:646: << {Peer:12D3KooWCCd6dU3XZJZ4A8R7hWd9PQCdmTJhMLuVNLYkvMb8xCqx Connectedness:Connected}
-08:28:58 libp2p_bs.go:656: [goodpeer] connected: <peer.ID 12*b8xCqx> addr=/ip4/70.34.217.160/tcp/4001
-09:10:59 libp2p_bs.go:652: << {Peer:12D3KooWMQcA3wszd9aM57YdcR6SnXCFo31iQd69hurdQBnmNGde Connectedness:Connected}
-09:10:59 libp2p_bs.go:662: [goodpeer] connected: <peer.ID 12*nmNGde> addr=/ip4/162.55.213.17/tcp/4001
-09:11:04 libp2p_bs.go:652: << {Peer:12D3KooWNa1orgN2JRvCZXp37QbdwSfoEKb4SUMMbeyCGKFq2g6y Connectedness:Connected}
-09:11:04 libp2p_bs.go:662: [goodpeer] connected: <peer.ID 12*Fq2g6y> addr=/dns4/154-29-75-250.k51qzi5uqu5dkwlo8muzebsw4ebo4l1009b0kbj19dxd1ff62dykzgorzohi9q.libp2p.direct/tcp/4001/tls/ws
-09:13:09 libp2p_bs.go:652: << {Peer:12D3KooWETqQmVb6uV9QPTTFSN6bgNoNG2smAanpeNqnwscXoiSw Connectedness:Connected}
-09:13:09 libp2p_bs.go:662: [goodpeer] connected: <peer.ID 12*cXoiSw> addr=/ip4/107.191.52.146/tcp/4001
-09:13:09 libp2p_bs.go:652: << {Peer:QmVo6ZqzkfdDDcPY8VszPVsLFaimcD4WcEBpPNQZTdyGfm Connectedness:Connected}
+
+230ms
 09:13:09 libp2p_bs.go:652: << {Peer:12D3KooWLd7aTPQJBEh81qDUwijhKLqJs4T3xSd3zzyC9ZZ7gUNh Connectedness:Connected}
 09:13:09 libp2p_bs.go:662: [goodpeer] connected: <peer.ID 12*Z7gUNh> addr=/ip4/216.128.185.210/tcp/4001
-09:13:09 libp2p_bs.go:652: << {Peer:12D3KooWCCd6dU3XZJZ4A8R7hWd9PQCdmTJhMLuVNLYkvMb8xCqx Connectedness:Connected}
-09:13:09 libp2p_bs.go:662: [goodpeer] connected: <peer.ID 12*b8xCqx> addr=/ip4/70.34.217.160/tcp/4001
+
+210ms
 09:13:09 libp2p_bs.go:652: << {Peer:12D3KooWGRFDB7Ho8vNQ21tDRHk2HmJx319XEuMMwvh3CkhQALDF Connectedness:Connected}
 09:13:09 libp2p_bs.go:662: [goodpeer] connected: <peer.ID 12*hQALDF> addr=/ip4/157.90.32.77/tcp/4001
-09:13:10 libp2p_bs.go:652: << {Peer:12D3KooWG83cxSdjbMHL3nLqFVpSuQ944n8gbYCGxQ4MQ8H7HuCP Connectedness:Connected}
-09:13:10 libp2p_bs.go:662: [goodpeer] connected: <peer.ID 12*H7HuCP> addr=/ip4/172.33.0.4/tcp/4001
-09:13:10 libp2p_bs.go:652: << {Peer:12D3KooWEqtbfoacAdiszAdL8vGYSbhADXcXLKv2wyY34iPwykjv Connectedness:Connected}
-09:13:10 libp2p_bs.go:662: [goodpeer] connected: <peer.ID 12*Pwykjv> addr=/ip4/93.95.229.144/tcp/4001

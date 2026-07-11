@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/envsh/libp2px/dlog"
+
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/multiformats/go-multiaddr"
@@ -16,6 +18,8 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
 )
+
+var ddlog = dlog.DDLog
 
 func isPrivateIP(ip net.IP) bool {
 	if ip == nil {
@@ -207,7 +211,7 @@ func myAddrsFactory(addrs []multiaddr.Multiaddr) []multiaddr.Multiaddr {
 			relayAddrs = append(relayAddrs, relayMA.String())
 		}
 	}
-	log.Printf("[addrsFactory] alloced addrs (%d): %v", len(relayAddrs), relayAddrs)
+	ddlog.Printf("[addrsFactory] alloced addrs (%d): %v", len(relayAddrs), relayAddrs)
 	return out
 }
 

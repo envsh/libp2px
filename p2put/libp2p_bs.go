@@ -96,6 +96,9 @@ var libp2pBootstrap = []string{
 
 var peerstorePath = "/tmp/libp2p_peerstore.json"
 var savedPeerstoreSum string
+// 缓存文件格式: map[string][]string (原始地址 → 解析后的地址列表)
+var dnsaddrsResultFile = filepath.Join(os.TempDir(), "libp2p_bootstrap_dnsaddrs.json")
+var dnsaddrsCacheDur = 5 * 3600 * time.Second
 
 type latencyReq struct {
 	addr string
@@ -124,9 +127,6 @@ type BootNode struct {
 	OfflineDetector *OfflineDetector
 }
 
-// 缓存文件格式: map[string][]string (原始地址 → 解析后的地址列表)
-var dnsaddrsResultFile = filepath.Join(os.TempDir(), "libp2p_bootstrap_dnsaddrs.json")
-var dnsaddrsCacheDur = 5 * 3600 * time.Second
 
 func loadOrResolveAllDNSAddrs() {
 	if data, err := os.ReadFile(dnsaddrsResultFile); err == nil {
@@ -466,12 +466,17 @@ func tryConnect(p peer.AddrInfo) error {
 // new(event.EvtLocalReachabilityChanged)...
 func startLatencyWorker() {
 	go func() {
+		cnter := 0
 		for req := range latencyCh {
 			dur := time.Duration(0)
 			if m, err := multiaddr.NewMultiaddr(req.addr); err == nil {
 				dur = detectPeerLatency(m)
 			}
-			log.Printf("[goodpeer] %s/p2p/%s latency=%v", req.addr, req.peer.String(), dur)
+			if dur > 200*time.Millisecond {
+				continue
+			}
+			cnter ++
+			log.Printf("[goodpeer<200] latency=%v cnt=%v %s/p2p/%s", dur, cnter, req.addr, req.peer.String())
 		}
 	}()
 }

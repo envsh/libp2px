@@ -97,6 +97,13 @@ var libp2pBootstrap = []string{
 var peerstorePath = "/tmp/libp2p_peerstore.json"
 var savedPeerstoreSum string
 
+type latencyReq struct {
+	addr string
+	peer peer.ID
+}
+
+var latencyCh = make(chan latencyReq, 32)
+
 func init() {
 	log.SetFlags((log.Flags() | log.Lshortfile | log.Ltime) &^ log.Ldate)
 }
@@ -388,6 +395,7 @@ func Bootstrap(ctx context.Context, cfg Config) (*BootNode, error) {
 	fmt.Println("=== Phase 4: Go Online ===")
 	fmt.Printf("[*] Node is now online. Press Ctrl+C to exit.\n")
 
+	startLatencyWorker()
 	myEventSuber(h, new(event.EvtLocalReachabilityChanged),
 		new(event.EvtPeerConnectednessChanged),
 		new(event.EvtLocalAddressesUpdated),
@@ -456,6 +464,18 @@ func tryConnect(p peer.AddrInfo) error {
 }
 
 // new(event.EvtLocalReachabilityChanged)...
+func startLatencyWorker() {
+	go func() {
+		for req := range latencyCh {
+			dur := time.Duration(0)
+			if m, err := multiaddr.NewMultiaddr(req.addr); err == nil {
+				dur = detectPeerLatency(m)
+			}
+			log.Printf("[goodpeer] %s/p2p/%s latency=%v", req.addr, req.peer.String(), dur)
+		}
+	}()
+}
+
 func myEventSuber(h host.Host, evts ...any) {
 	// sub, err := h.EventBus().Subscribe(new(event.EvtLocalReachabilityChanged))
 	sub, err := h.EventBus().Subscribe(evts)
@@ -482,10 +502,10 @@ func myEventSuber(h host.Host, evts ...any) {
 				}
 			}
 			switch e := evt.(type) {
-				case event.EvtLocalReachabilityChanged:
-					rawChan <- evt
-				default:
-					_ = e
+			case event.EvtLocalReachabilityChanged:
+				rawChan <- evt
+			default:
+				_ = e
 			}
 
 			switch e := evt.(type) {
@@ -495,7 +515,11 @@ func myEventSuber(h host.Host, evts ...any) {
 				handlePeerConnectednessChanged(e)
 				if e.Connectedness == network.Connected {
 					if addr := IsGoodPeer(e.Peer); addr != "" {
-						log.Printf("[goodpeer] %s/p2p/%s", addr, e.Peer.String())
+						select {
+						case latencyCh <- latencyReq{addr: addr, peer: e.Peer}:
+						default:
+							log.Printf("[goodpeer] %s/p2p/%s latency=nodt", addr, e.Peer.String())
+						}
 					}
 				}
 				if e.Connectedness == network.Limited {

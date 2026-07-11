@@ -326,6 +326,24 @@ func PeerIsConnected(pid peer.ID, direct bool) bool {
 	return false
 }
 
+func detectPeerLatency(addr multiaddr.Multiaddr) time.Duration {
+	ip, err := addr.ValueForProtocol(multiaddr.P_IP4)
+	if err != nil {
+		return 0
+	}
+	port, err := addr.ValueForProtocol(multiaddr.P_TCP)
+	if err != nil {
+		return 0
+	}
+	t0 := time.Now()
+	conn, err := net.DialTimeout("tcp", ip+":"+port, 3*time.Second)
+	if err != nil {
+		return 0
+	}
+	conn.Close()
+	return time.Since(t0)
+}
+
 func getListenPort() int {
 	for _, a := range bootres.Host.Network().ListenAddresses() {
 		if p, err := a.ValueForProtocol(multiaddr.P_TCP); err == nil {

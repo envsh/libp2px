@@ -252,6 +252,7 @@ func handleUDPTunnel(s network.Stream) {
 }
 
 // peerID format: 123xxx[:port]
+// if want a net.Conn, just wrap like this: &pbtunnel.P2PConn{stm}
 func Dial(peerID string, ctx ...context.Context) (network.Stream, error) {
 	var c context.Context
 	if len(ctx) > 0 {
@@ -268,15 +269,16 @@ func Dial(peerID string, ctx ...context.Context) (network.Stream, error) {
 	} else {
 		log.Panicln("wtf", arr)
 	}
+	// log.Println("opening", peerID, protoWithPort)
 	return p2put.OpenStream(c, peerID, protoWithPort)
 }
 
-type p2pConn struct {
+type P2PConn struct {
 	network.Stream
 }
 
-func (c *p2pConn) LocalAddr() net.Addr  { a, _ := manet.ToNetAddr(c.Conn().LocalMultiaddr()); return a }
-func (c *p2pConn) RemoteAddr() net.Addr { a, _ := manet.ToNetAddr(c.Conn().RemoteMultiaddr()); return a }
+func (c *P2PConn) LocalAddr() net.Addr  { a, _ := manet.ToNetAddr(c.Conn().LocalMultiaddr()); return a }
+func (c *P2PConn) RemoteAddr() net.Addr { a, _ := manet.ToNetAddr(c.Conn().RemoteMultiaddr()); return a }
 
 // 假设协议对端的端口是http proxy端口
 // NewHttpClient creates an *http.Client that tunnels all requests over a p2p
@@ -324,7 +326,7 @@ func NewHttpClient(peerID string) *http.Client {
 					stream.Close()
 					return nil, fmt.Errorf("CONNECT failed: %s", bytes.TrimRight(buf.Bytes(), "\r\n"))
 				}
-				return &p2pConn{Stream: stream}, nil
+				return &P2PConn{Stream: stream}, nil
 			},
 		},
 	}

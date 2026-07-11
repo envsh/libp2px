@@ -23,7 +23,9 @@ go-libp2p 0.46 upstream: need test
 
 ### big plan
 
-* remove webrtc/quic code from libp2p.git
-* update to libp2p v0.49, about 2026.06
+- [ ] drop libp2p-pubsub
+	https://github.com/envsh/toxhttpd/issues/1
+- [x] remove webrtc/quic code from libp2p.git
+- [ ] update to libp2p v0.49, about 2026.06
 
 ### note: don't use go 1.25.6 build

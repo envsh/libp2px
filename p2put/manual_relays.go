@@ -26,6 +26,6 @@ var manualRelays = []string{
 	// "/ip4/70.34.217.160/tcp/4001/p2p/12D3KooWCCd6dU3XZJZ4A8R7hWd9PQCdmTJhMLuVNLYkvMb8xCqx",
 	// reset by peer
 	// "/ip4/93.95.229.144/tcp/4001/p2p/12D3KooWEqtbfoacAdiszAdL8vGYSbhADXcXLKv2wyY34iPwykjv",
-	// 50ms
+	// 50ms, refuse
 	"/ip4/171.213.200.132/tcp/4001/p2p/12D3KooWE1qQW1Ejrf1xRARQnrECEHSL3ggRzZEH5nuNgKtvtfc8",
 }

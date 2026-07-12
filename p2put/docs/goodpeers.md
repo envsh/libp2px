@@ -1,6 +1,6 @@
 non default bootstrap but good, todo still need check nodes is stabled
 
-cn 50ms /ip4/171.213.200.132/tcp/4001/p2p/12D3KooWE1qQW1Ejrf1xRARQnrECEHSL3ggRzZEH5nuNgKtvtfc8
+xxx cn 50ms /ip4/171.213.200.132/tcp/4001/p2p/12D3KooWE1qQW1Ejrf1xRARQnrECEHSL3ggRzZEH5nuNgKtvtfc8
 
 cn
 21:40:48 libp2p_bs.go:474: [goodpeer] /ip4/47.108.58.134/tcp/4001/p2p/12D3KooWL9SUUXmQ4DcxsQ1k41h29vcMJLHJMukQTtez3jKCKXQ4 latency=50.649698ms

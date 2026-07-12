@@ -160,7 +160,8 @@ type TurnPool struct {
 	servers map[string]*turnServer
 	ctx     context.Context
 	cancel  context.CancelFunc
-	permips map[string]int // ip => port? // 可以外部追加
+	permips    map[string]int // ip => port? // 可以外部追加
+	permipsMu  sync.Mutex
 }
 
 func NewTurnPool() *TurnPool {
@@ -268,7 +269,9 @@ func (p *TurnPool) AddPermIP(ip string) {
 		ip = strings.Split(ip, ":")[0]
 	}
 	if strings.Count(ip, ".") != 3 { return }
+	p.permipsMu.Lock()
 	p.permips[ip] = 1
+	p.permipsMu.Unlock()
 	log.Println("added permip", ip)
 }
 func (p *TurnPool) RemovePermIP(ip string) {
@@ -277,7 +280,9 @@ func (p *TurnPool) RemovePermIP(ip string) {
 		ip = strings.Split(ip, ":")[0]
 	}
 	if strings.Count(ip, ".") != 3 { return }
+	p.permipsMu.Lock()
 	delete(p.permips, ip)
+	p.permipsMu.Unlock()
 }
 
 func safeString(a net.Addr) string {
@@ -482,10 +487,12 @@ func (ts *turnServer) connect() error {
 
 func (tp *TurnPool) permAddresses() []net.Addr {
 	addrs := []net.Addr{}
-	for ip, _ := range tp.permips {
+	tp.permipsMu.Lock()
+	for ip := range tp.permips {
 		o := net.ParseIP(ip)
 		addrs=append(addrs, &net.TCPAddr{IP: o})
 	}
+	tp.permipsMu.Unlock()
 	return addrs
 }
 

@@ -82,6 +82,9 @@ func init() {
 	p2put.MustRegisterProtocol(udpTunnelProto, handleUDPTunnel, true)
 }
 
+// TODO: ready handshake — 连上 target TCP 后往 stream 写 1B 0x00 确认，
+// 失败写 0x01+errmsg 后 Close()。Dial 端 NewStream 后读 1B 等确认。
+// 避免 "NewStream 成功但远端 Dial 失败" 的误报。参考 SOCKS5/HTTP CONNECT 模式。
 func handleTunnel(s network.Stream) {
 	seq := atomic.AddInt64(&Stats.ConnSeq, 1)
 	start := time.Now()
@@ -172,6 +175,7 @@ func handleTunnel(s network.Stream) {
 	log.Printf("[pbtunnel] conn=%d closed: sent=%d recv=%d dur=%s", seq, localSent, localRecv, dur.Round(time.Millisecond))
 }
 
+// TODO: ready handshake — 同上，Dial("udp") 成功后写 0x00，失败写 0x01+errmsg。
 func handleUDPTunnel(s network.Stream) {
 	seq := atomic.AddInt64(&Stats.ConnSeq, 1)
 	start := time.Now()
@@ -388,6 +392,8 @@ func (udp *p2pUdpConn) getStream() (*streamHolder, error) {
 	return h, nil
 }
 
+// TODO: ready handshake — 同上，NewStream 后读 1B 等远端确认 target 连接成功，
+// 读到 0x01 则读 errmsg 返回错误。加 10s timeout 兼容旧对端。
 // this maybe call many times
 func (udp *p2pUdpConn) connectOverStream() (network.Stream, error) {
 	c := udp.c
@@ -456,6 +462,8 @@ func (udp *p2pUdpConn) Write(buf []byte) (int, error) {
 	return n, nil
 }
 
+// TODO: ready handshake — NewStream 后读 1B 等远端确认 target 连接成功，
+// 读到 0x01 则读 errmsg 返回错误。加 10s timeout 兼容旧对端。
 // peerID format: 123xxx[:port]
 // if want a net.Conn, just wrap like this: &pbtunnel.P2PConn{stm}
 func Dial(peerID string, ctx ...context.Context) (network.Stream, error) {

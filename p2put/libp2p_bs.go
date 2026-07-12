@@ -472,7 +472,7 @@ func startLatencyWorker() {
 			if m, err := multiaddr.NewMultiaddr(req.addr); err == nil {
 				dur = detectPeerLatency(m)
 			}
-			if dur > 200*time.Millisecond {
+			if dur > 200*time.Millisecond || dur == 0 {
 				continue
 			}
 			cnter ++

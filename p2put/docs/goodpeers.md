@@ -12,6 +12,9 @@ kr
 22:46:36 libp2p_bs.go:474: [goodpeer] /ip4/27.102.137.209/tcp/4001/p2p/12D3KooWGGhWDDdq8gWDX8nJ2YiNgrMfepNAusmfxKhoQfbRrYDf latency=63.697647ms
 
 tw, maybe not stable
+01:10:10 libp2p_bs.go:479: [goodpeer<200] latency=73.228721ms cnt=44 /ip4/210.242.27.237/tcp/4001/p2p/12D3KooWKKa6v7YTTyTCn7nHfq7erKihRCX7JQc8JezSfVn6Egka
+
+tw, maybe not stable
 21:52:11 libp2p_bs.go:474: [goodpeer] /ip4/211.75.3.20/tcp/4001/p2p/12D3KooWLYn7nj337v7dw5i1ueKunzFj72TkC6Prntq8xQUAAFNz latency=77.128548ms
 
 sg
@@ -24,6 +27,9 @@ jp
 23:05:41 libp2p_bs.go:474: [goodpeer] /ip4/45.76.100.154/tcp/4001/p2p/12D3KooWAgeT54FWvamWZWMWE2YNkoTVUPo1hKgaurC8DM9fhsm7 latency=124.832314ms
 
 23:14:09 libp2p_bs.go:474: [goodpeer] /ip4/45.119.155.29/tcp/4001/p2p/12D3KooWSDf4XJDaH3ovbDoZS8zd5MyLbGMHFiJEu1R4br3Ga9yE latency=130.381958ms
+
+jp
+01:29:01 libp2p_bs.go:479: [goodpeer<200] latency=136.427205ms cnt=63 /ip4/198.13.55.90/tcp/4001/p2p/12D3KooWHCbyp4f8vRwjA14RYQQTKjxeMbPAwtXzMpzmCVGM6AAz
 
 23:20:44 libp2p_bs.go:474: [goodpeer] /ip4/104.211.94.205/tcp/4001/p2p/12D3KooWHZBfYz7Mu85zmkCHaqr5YnaDh2eN1sDocmCMDqmbK4hn latency=148.565287ms
 

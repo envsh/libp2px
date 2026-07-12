@@ -183,7 +183,7 @@ func handleUDPTunnel(s network.Stream) {
 		return
 	}
 
-	addr := targetAddr()
+	addr := targetAddr(string(s.Protocol()))
 	udpConn, err := net.Dial("udp", addr)
 	if err != nil {
 		log.Printf("[pbtunnel] udp dial %s: %v", addr, err)
@@ -210,15 +210,20 @@ func handleUDPTunnel(s network.Stream) {
 		for {
 			_, err := io.ReadFull(s, hdr)
 			if err != nil {
+				log.Println(err)
 				return
 			}
 			length := int(binary.BigEndian.Uint16(hdr))
 			buf := make([]byte, length)
 			_, err = io.ReadFull(s, buf)
 			if err != nil {
+				log.Println(err)
 				return
 			}
-			wn, _ := udpConn.Write(buf)
+			wn, err := udpConn.Write(buf)
+			if err != nil {
+				log.Println(err)
+			}
 			localSent += int64(wn)
 			atomic.AddInt64(&Stats.BytesSent, int64(wn))
 		}
@@ -233,7 +238,10 @@ func handleUDPTunnel(s network.Stream) {
 			if n > 0 {
 				hdr := []byte{0, 0}
 				binary.BigEndian.PutUint16(hdr, uint16(n))
-				wn, _ := writen(s, append(hdr, buf[:n]...), n+2)
+				wn, err := writen(s, append(hdr, buf[:n]...), n+2)
+				if err != nil {
+					log.Println(err)
+				}
 				atomic.AddInt64(&Stats.BytesRecv, int64(wn))
 				localRecv += int64(wn)
 				if wn != n+2 {
@@ -249,6 +257,135 @@ func handleUDPTunnel(s network.Stream) {
 	wg.Wait()
 	dur := time.Since(start)
 	log.Printf("[pbtunnel] udp conn=%d closed: sent=%d recv=%d dur=%s", seq, localSent, localRecv, dur.Round(time.Millisecond))
+}
+
+// todo Dial("p2x", peerID)
+
+// peerID format: 123xxx[:port]
+// if want a net.Conn, just wrap like this: &pbtunnel.P2PConn{stm}
+func DialUDP(peerID string, ctx ...context.Context) (*p2pUdpConn, error) {
+	var c context.Context
+	if len(ctx) > 0 {
+		c = ctx[0]
+	} else {
+		c = context.Background()
+	}
+	arr := strings.Split(peerID, ":")
+	protoWithPort := fmt.Sprintf("%s%v", udpTunnelProto, tunnelPort)
+	if len(arr) == 2 {
+		protoWithPort = fmt.Sprintf("%s%v", udpTunnelProto, arr[1])
+		peerID = arr[0]
+	} else if len(arr) == 1{
+	} else {
+		log.Panicln("wtf", arr)
+	}
+	uconn := &p2pUdpConn{c: c}
+	uconn.peerID = peerID
+	uconn.protoWithPort = protoWithPort
+
+	stm, err := uconn.connectOverStream()
+	uconn.Stream = stm
+	if err != nil {
+		log.Println("first udp conn failed", err)
+	}
+
+	return uconn, nil
+}
+
+type p2pUdpConn struct {
+	network.Stream
+	c context.Context
+	peerID string // id[:port]
+	protoWithPort string
+	connCount int
+}
+
+func (c *p2pUdpConn) LocalAddr() net.Addr  {
+	a, _ := manet.ToNetAddr(c.Conn().LocalMultiaddr())
+	return a
+}
+func (c *p2pUdpConn) RemoteAddr() net.Addr {
+	a, _ := manet.ToNetAddr(c.Conn().RemoteMultiaddr())
+	return a
+}
+
+func (udp *p2pUdpConn) Close() error {
+	err := udp.Stream.Close()
+	udp.Stream = nil
+	return err
+}
+
+func (udp *p2pUdpConn) peerShort() string {
+	peerIDObj, _ := peer.Decode(udp.peerID)
+	return peerIDObj.ShortString()
+}
+
+// this maybe call many times
+func (udp *p2pUdpConn) connectOverStream() (network.Stream, error) {
+	c := udp.c
+	peerID := udp.peerID
+	protoWithPort := udp.protoWithPort
+
+	log.Println("opening UDP", udp.peerShort(), protoWithPort)
+	stm, err := p2put.OpenStream(c, peerID, protoWithPort)
+	if err != nil {
+		return nil, err
+	}
+	return stm, err
+}
+
+func (udp *p2pUdpConn) Read(buf []byte) (int, error) {
+	if udp.Stream == nil {
+		stm, err := udp.connectOverStream()
+		if err != nil {
+			return 0, err
+		}
+		udp.Stream = stm
+	}
+
+	hdr := make([]byte, 2)
+	_, err := io.ReadFull(udp.Stream, hdr)
+	if err != nil {
+		log.Println(err, udp.peerShort(), udp.protoWithPort)
+		return 0, err
+	}
+	length := int(binary.BigEndian.Uint16(hdr))
+	// log.Println("udp pktlen", length)
+	buf2 := make([]byte, length)
+	_, err = io.ReadFull(udp.Stream, buf2)
+	if err != nil {
+		log.Println(err, udp.peerShort(), udp.protoWithPort)
+		return 0, err
+	}
+	if cap(buf) < length {
+		panic("buf too small")
+	}
+	copy(buf, buf2) // check cap(buf)>=lenght
+	return length, nil
+}
+func (udp *p2pUdpConn) Write(buf []byte) (int, error) {
+	if udp.Stream == nil {
+		stm, err := udp.connectOverStream()
+		if err != nil {
+			return 0, err
+		}
+		udp.Stream = stm
+	}
+
+	// write hdr(2B)+buf, see handleUdptunnel
+	n := len(buf)
+	hdr := []byte{0, 0}
+	binary.BigEndian.PutUint16(hdr, uint16(n))
+	wn, err := writen(udp.Stream, append(hdr, buf...), len(buf)+2)
+	// log.Println("udp wroted", wn)
+	if err != nil {
+		log.Println(err, udp.peerShort(), udp.protoWithPort)
+	}
+	if wn != n+2 {
+		return wn, fmt.Errorf("writen failed %v %v", wn, n+2)
+	}
+
+	return n, nil
 }
 
 // peerID format: 123xxx[:port]

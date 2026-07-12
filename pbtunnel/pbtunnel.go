@@ -284,40 +284,104 @@ func DialUDP(peerID string, ctx ...context.Context) (*p2pUdpConn, error) {
 	uconn.protoWithPort = protoWithPort
 
 	stm, err := uconn.connectOverStream()
-	uconn.Stream = stm
 	if err != nil {
 		log.Println("first udp conn failed", err)
+		return nil, fmt.Errorf("connect: %w", err)
 	}
-
+	uconn.holder.Store(&streamHolder{s: stm})
 	return uconn, nil
 }
 
-type p2pUdpConn struct {
-	network.Stream
-	c context.Context
-	peerID string // id[:port]
-	protoWithPort string
-	connCount int
+type streamHolder struct {
+	s network.Stream
 }
 
+type p2pUdpConn struct {
+	holder        atomic.Pointer[streamHolder]
+	closed        atomic.Bool
+	c             context.Context
+	peerID        string
+	protoWithPort string
+	mu            sync.Mutex
+}
+
+var _ net.Conn = (*p2pUdpConn)(nil)
+
 func (c *p2pUdpConn) LocalAddr() net.Addr  {
-	a, _ := manet.ToNetAddr(c.Conn().LocalMultiaddr())
+	h := c.holder.Load()
+	if h == nil { return nil }
+	a, _ := manet.ToNetAddr(h.s.Conn().LocalMultiaddr())
 	return a
 }
 func (c *p2pUdpConn) RemoteAddr() net.Addr {
-	a, _ := manet.ToNetAddr(c.Conn().RemoteMultiaddr())
+	h := c.holder.Load()
+	if h == nil { return nil }
+	a, _ := manet.ToNetAddr(h.s.Conn().RemoteMultiaddr())
 	return a
 }
 
+func (udp *p2pUdpConn) SetReadDeadline(t time.Time) error {
+	h := udp.holder.Load()
+	if h == nil { return fmt.Errorf("not connected") }
+	return h.s.SetReadDeadline(t)
+}
+func (udp *p2pUdpConn) SetWriteDeadline(t time.Time) error {
+	h := udp.holder.Load()
+	if h == nil { return fmt.Errorf("not connected") }
+	return h.s.SetWriteDeadline(t)
+}
+func (udp *p2pUdpConn) SetDeadline(t time.Time) error {
+	h := udp.holder.Load()
+	if h == nil { return fmt.Errorf("not connected") }
+	return h.s.SetDeadline(t)
+}
+
 func (udp *p2pUdpConn) Close() error {
-	err := udp.Stream.Close()
-	udp.Stream = nil
-	return err
+	udp.closed.Store(true)
+	h := udp.holder.Swap(nil)
+	if h == nil { return nil }
+	return h.s.Close()
 }
 
 func (udp *p2pUdpConn) peerShort() string {
 	peerIDObj, _ := peer.Decode(udp.peerID)
 	return peerIDObj.ShortString()
+}
+
+func (udp *p2pUdpConn) getStream() (*streamHolder, error) {
+	udp.mu.Lock()
+	if h := udp.holder.Load(); h != nil {
+		udp.mu.Unlock()
+		return h, nil
+	}
+	if udp.closed.Load() {
+		udp.mu.Unlock()
+		return nil, fmt.Errorf("closed")
+	}
+	udp.mu.Unlock()
+
+	stm, err := udp.connectOverStream()
+
+	udp.mu.Lock()
+	if err != nil {
+		udp.closed.Store(true)
+		udp.mu.Unlock()
+		return nil, err
+	}
+	if udp.closed.Load() {
+		stm.Close()
+		udp.mu.Unlock()
+		return nil, fmt.Errorf("closed")
+	}
+	if h := udp.holder.Load(); h != nil {
+		stm.Close()
+		udp.mu.Unlock()
+		return h, nil
+	}
+	h := &streamHolder{s: stm}
+	udp.holder.Store(h)
+	udp.mu.Unlock()
+	return h, nil
 }
 
 // this maybe call many times
@@ -335,16 +399,16 @@ func (udp *p2pUdpConn) connectOverStream() (network.Stream, error) {
 }
 
 func (udp *p2pUdpConn) Read(buf []byte) (int, error) {
-	if udp.Stream == nil {
-		stm, err := udp.connectOverStream()
-		if err != nil {
-			return 0, err
-		}
-		udp.Stream = stm
+	h := udp.holder.Load()
+	if h == nil {
+		var err error
+		h, err = udp.getStream()
+		if err != nil { return 0, err }
 	}
+	stm := h.s
 
 	hdr := make([]byte, 2)
-	_, err := io.ReadFull(udp.Stream, hdr)
+	_, err := io.ReadFull(stm, hdr)
 	if err != nil {
 		log.Println(err, udp.peerShort(), udp.protoWithPort)
 		return 0, err
@@ -352,7 +416,7 @@ func (udp *p2pUdpConn) Read(buf []byte) (int, error) {
 	length := int(binary.BigEndian.Uint16(hdr))
 	// log.Println("udp pktlen", length)
 	buf2 := make([]byte, length)
-	_, err = io.ReadFull(udp.Stream, buf2)
+	_, err = io.ReadFull(stm, buf2)
 	if err != nil {
 		log.Println(err, udp.peerShort(), udp.protoWithPort)
 		return 0, err
@@ -364,19 +428,19 @@ func (udp *p2pUdpConn) Read(buf []byte) (int, error) {
 	return length, nil
 }
 func (udp *p2pUdpConn) Write(buf []byte) (int, error) {
-	if udp.Stream == nil {
-		stm, err := udp.connectOverStream()
-		if err != nil {
-			return 0, err
-		}
-		udp.Stream = stm
+	h := udp.holder.Load()
+	if h == nil {
+		var err error
+		h, err = udp.getStream()
+		if err != nil { return 0, err }
 	}
+	stm := h.s
 
 	// write hdr(2B)+buf, see handleUdptunnel
 	n := len(buf)
 	hdr := []byte{0, 0}
 	binary.BigEndian.PutUint16(hdr, uint16(n))
-	wn, err := writen(udp.Stream, append(hdr, buf...), len(buf)+2)
+	wn, err := writen(stm, append(hdr, buf...), len(buf)+2)
 	// log.Println("udp wroted", wn)
 	if err != nil {
 		log.Println(err, udp.peerShort(), udp.protoWithPort)

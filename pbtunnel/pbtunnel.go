@@ -360,7 +360,11 @@ func (udp *p2pUdpConn) getStream() (*streamHolder, error) {
 	}
 	udp.mu.Unlock()
 
+	btime := time.Now()
 	stm, err := udp.connectOverStream()
+	if err != nil {
+		log.Println(err, time.Since(btime))
+	}
 
 	udp.mu.Lock()
 	if err != nil {

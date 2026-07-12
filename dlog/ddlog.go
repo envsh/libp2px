@@ -55,10 +55,11 @@ type DDLogger struct {
 	trig   func(func())  // debounce trigger (New 的返回值)
 }
 
+// struct has Mutex, must pointer
 var DDLog = newDDLogger()
 
-func newDDLogger() DDLogger {
-	return DDLogger{trig: debounce.New(debounceDelay)}
+func newDDLogger() *DDLogger {
+	return &DDLogger{trig: debounce.New(debounceDelay)}
 }
 
 // Printf 是 DDLog 的唯一入口.

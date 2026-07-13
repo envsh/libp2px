@@ -121,7 +121,7 @@ func handleTunnel(s network.Stream) {
 	go func() {
 		defer log.Println("xfer tun <- sock", seq, peerid)
 		defer wg.Done()
-		defer closeStream()
+		// defer closeStream()
 		buf := make([]byte, bufSize)
 		for {
 			conn.SetReadDeadline(time.Now().Add(5 * time.Minute))
@@ -209,7 +209,7 @@ func handleUDPTunnel(s network.Stream) {
 
 	go func() {
 		defer wg.Done()
-		defer closeStream()
+		// defer closeStream()
 		hdr := make([]byte, 2)
 		for {
 			_, err := io.ReadFull(s, hdr)

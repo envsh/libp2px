@@ -263,7 +263,9 @@ func mainLibp2p(cfg Config) {
 		Password: "ring",
 		Realm:    "ring",
 	})
-	turnPool.Start(context.Background())
+	if currConfig.enableTurnRelay {
+		turnPool.Start(context.Background())
+	}
 
 	p := GetIrohRelayPool()
 	p.AddRelay("wss://usw1-1.relay.n0.iroh-canary.iroh.link/relay")

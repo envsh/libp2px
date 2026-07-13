@@ -34,6 +34,8 @@ type Config struct {
 	AutoPing bool
 
 	Topics []string
+
+	enableTurnRelay bool
 }
 
 // default for vps deploy that not cmdline

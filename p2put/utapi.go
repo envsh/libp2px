@@ -130,7 +130,7 @@ func broadcastLoop() {
 			for i := 0; i < v.NumField(); i++ {
 				keys = append(keys, v.Type().Field(i).Name)
 			}
-			log.Printf("[broadcastLoop] raw keys=%v type=%s", keys, v.Type().String())
+			ddlog.Printf("[broadcastLoop] raw keys=%v type=%s", keys, v.Type().String())
 		}
 
 		evt := Event{EventID: time.Now().UnixNano()}

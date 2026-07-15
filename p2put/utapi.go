@@ -646,7 +646,7 @@ func CollectConns() ([]ConnResp, error) {
 }
 
 func CollectDHT() (DHTResp, error) {
-	if bootres == nil || bootres.Host == nil {
+	if bootres == nil || bootres.Host == nil || bootres.PSO == nil {
 		return DHTResp{}, fmt.Errorf("libp2p not ready")
 	}
 	size, strs := dhtCollectDHT()

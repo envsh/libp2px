@@ -36,6 +36,7 @@ type Config struct {
 	Topics []string
 
 	enableTurnRelay bool
+	enableIrohRelay bool
 }
 
 // default for vps deploy that not cmdline

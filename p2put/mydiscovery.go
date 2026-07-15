@@ -569,7 +569,9 @@ func DiscoveryV6(ctx context.Context) {
 						// tryStreamToTarget(ctx, s)
 						// tryPingToTarget(ctx, s)
 					}
-					log.Println("topic peers for reddit", len(bootres.PSO.ListPeers("reddit")))
+					if bootres.PSO != nil {
+							log.Println("topic peers for reddit", len(bootres.PSO.ListPeers("reddit")))
+						}
 				}
 				time.Sleep(5 * time.Second)
 			}

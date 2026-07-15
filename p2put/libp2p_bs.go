@@ -23,7 +23,6 @@ import (
 
 	"github.com/envsh/toxera/fedkey"
 	"github.com/libp2p/go-libp2p"
-	"github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/event"
 	"github.com/libp2p/go-libp2p/core/host"
@@ -114,7 +113,7 @@ func init() {
 type BootNode struct {
 	Host            host.Host
 	DHT             any
-	PSO             *pubsub.PubSub
+	PSO             any
 	Bwc             metrics.Reporter
 	PeerID          peer.ID
 	AddrMgr         *AddrManager
@@ -405,34 +404,7 @@ func Bootstrap(ctx context.Context, cfg Config) (*BootNode, error) {
 		new(event.EvtLocalAddressesUpdated),
 		new(event.EvtPeerProtocolsUpdated),
 		new(event.EvtPeerIdentificationCompleted))
-	pso, err := pubsub.NewGossipSub(context.Background(), h,
-		pubsub.WithPeerExchange(true),
-		pubsub.WithFloodPublish(true), // can publish to peer, not wait to mesh
-		pubsub.WithDirectPeers(staticRelays),
-		// pubsub.WithDiscovery(bsres.Discovery),
-		// pubsub.WithDirectPeers(dht.GetDefaultBootstrapPeerAddrInfos()),
-		// half default
-		pubsub.WithGossipSubParams(myGossipSubParams()),
-		pubsub.WithPeerScore(
-			&pubsub.PeerScoreParams{
-				SkipAtomicValidation: true,
-				AppSpecificScore:     func(peer.ID) float64 { return 0 },
-				DecayInterval:        time.Second,
-				DecayToZero:          0.01,
-			},
-			&pubsub.PeerScoreThresholds{
-				SkipAtomicValidation: true,
-			},
-		),
-		pubsub.WithPeerScoreInspect(
-			func(scores map[peer.ID]float64) {
-				for pid, s := range scores {
-					log.Printf("[score] %s: %.2f", pid.ShortString(), s)
-				}
-			},
-			30*time.Second,
-		),
-	)
+	pso, err := BuildGossipSub(context.Background(), h, staticRelays)
 	if err != nil {
 		log.Println(err)
 	}

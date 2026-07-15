@@ -427,12 +427,12 @@ type dhtPeersResponse struct {
 }
 
 func reconnectFromPeerDB(ctx context.Context) {
-	if bootres == nil || bootres.Host == nil || bootres.PeerDB == nil || bootres.PSO == nil {
+	if bootres == nil || bootres.Host == nil || bootres.PeerDB == nil {
 		return
 	}
 
 	topicPeers := make(map[peer.ID]struct{})
-	for _, pid := range bootres.PSO.ListPeers(currConfig.HubName) {
+	for _, pid := range ListTopicPeers(currConfig.HubName) {
 		topicPeers[pid] = struct{}{}
 	}
 
@@ -462,7 +462,7 @@ func reconnectFromPeerDB(ctx context.Context) {
 			continue
 		}
 		cancel()
-		peernum := len(bootres.PSO.ListPeers(currConfig.HubName))
+		peernum := len(ListTopicPeers(currConfig.HubName))
 		log.Printf("[peerdb] reconnected %s %s %v", r.PeerID.ShortString(), "peers", peernum)
 
 		pctx, pcancel := context.WithTimeout(ctx, 10*time.Second)
@@ -569,9 +569,7 @@ func DiscoveryV6(ctx context.Context) {
 						// tryStreamToTarget(ctx, s)
 						// tryPingToTarget(ctx, s)
 					}
-					if bootres.PSO != nil {
-							log.Println("topic peers for reddit", len(bootres.PSO.ListPeers("reddit")))
-						}
+					log.Println("topic peers for reddit", len(ListTopicPeers("reddit")))
 				}
 				time.Sleep(5 * time.Second)
 			}

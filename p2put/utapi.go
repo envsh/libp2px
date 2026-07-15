@@ -3,19 +3,16 @@ package p2put
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"reflect"
-	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/ipfs/go-cid"
-	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/metrics"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -48,8 +45,9 @@ type pubsubEvent struct {
 }
 
 const (
-	eventBufCap = 128
-	maxCap      = 0
+	eventBufCap    = 128
+	maxCap         = 0
+	maxPublishSize = 1 << 20
 )
 
 type eventBuffer struct {
@@ -63,7 +61,6 @@ var (
 	clients       map[chan Event]struct{}
 	clientsMu     sync.RWMutex
 	clientTopics  map[chan Event][]string
-	topicSubs     sync.Map // map[string]*pubsub.Topic
 	topicBuf      sync.Map // map[string]*eventBuffer
 	discoveryTags sync.Map // set[string]
 
@@ -191,125 +188,7 @@ func hasTopic(topics []string, topic string) bool {
 	return false
 }
 
-func getOrSubscribeTopic(topic string) (*pubsub.Topic, error) {
-	if bootres == nil || bootres.PSO == nil {
-		return nil, fmt.Errorf("pso not ready")
-	}
-	if val, ok := topicSubs.Load(topic); ok {
-		return val.(*pubsub.Topic), nil
-	}
 
-	t, err := bootres.PSO.Join(topic)
-	if err != nil {
-		if val, ok := topicSubs.Load(topic); ok {
-			return val.(*pubsub.Topic), nil
-		}
-		return nil, err
-	}
-
-	topicSubs.Store(topic, t)
-
-	sub, err := t.Subscribe()
-	if err != nil {
-		topicSubs.Delete(topic)
-		return nil, err
-	}
-	go topicListener(sub, topic)
-	return t, nil
-}
-
-func substrSafe(s string, maxRunes int) string {
-	runes := []rune(s)
-	if len(runes) > maxRunes {
-		runes = runes[:maxRunes]
-	}
-	return string(runes)
-}
-
-func topicListener(sub *pubsub.Subscription, topic string) {
-	ctx := context.Background()
-	for {
-		msg, err := sub.Next(ctx)
-		if err != nil {
-			return
-		}
-		// isme := msg.ReceivedFrom == bootres.PeerID
-		// log.Println("<< submsg", isme, msg.ReceivedFrom.ShortString(), topic, len(msg.Data), substrSafe(string(msg.Data), 48))
-		if isMsgSeen(msg.ID) {
-			// /d2hub/pubsub/1.0 forward handler 已处理过，跳过避免重复
-			continue
-		}
-		if msg.ReceivedFrom == bootres.PeerID {
-			ForwardToLimitedPeers(*msg.Topic, msg.Data)
-		}
-		// msg.ID 是二进制拼接 key，Event JSON 序列化会被 \uXXXX 膨胀
-		// Event 下游不依赖 msg.ID 寻址，清掉节省内存和序列化开销
-		msg.ID = ""
-		msg.Message.Signature = nil
-		msg.Message.Key = nil
-		evt := Event{EventID: time.Now().UnixNano(), Type: "pubsub", Topic: topic, Value: pubsubEvent{
-			From:         string(msg.Message.From),
-			Data:         string(msg.Message.Data),
-			Seqno:        base64.StdEncoding.EncodeToString(msg.Message.Seqno),
-			Topic:        *msg.Message.Topic,
-			ReceivedFrom: msg.ReceivedFrom.ShortString(),
-		}}
-		clientsMu.RLock()
-		for ch, topics := range clientTopics {
-			if hasTopic(topics, topic) {
-				select {
-				case ch <- evt:
-				default:
-					log.Printf("[events] drop pubsub/%s to slow client", topic)
-				}
-			}
-		}
-		clientsMu.RUnlock()
-		pushToBuf(evt)
-
-		fireCallbacks(msg)
-	}
-}
-
-const maxPublishSize = 1 << 20 // 1MB, matches DefaultMaxMessageSize
-
-func UnsubscribeTopic(topic string) error {
-	if bootres == nil || bootres.PSO == nil {
-		return fmt.Errorf("pso not ready")
-	}
-	val, ok := topicSubs.Load(topic)
-	if !ok {
-		return fmt.Errorf("topic %s not subscribed", topic)
-	}
-	t := val.(*pubsub.Topic)
-	if err := t.Close(); err != nil {
-		return err
-	}
-	topicSubs.Delete(topic)
-	log.Printf("[pso] unsubscribed: %s", topic)
-	return nil
-}
-
-func PublishTopic(topic string, data []byte) error {
-	t, err := getOrSubscribeTopic(topic)
-	if err != nil {
-		return err
-	}
-	// log.Printf("[pso] subscribe topic=%q, peers=%d", topic, len(bootres.PSO.ListPeers(topic)))
-	if len(data) > maxPublishSize {
-		return fmt.Errorf("payload too large: %d bytes, max %d", len(data), maxPublishSize)
-	}
-	err = t.Publish(context.Background(), data)
-	if err == nil && len(bootres.PSO.ListPeers(topic)) == 0 {
-		err = fmt.Errorf("no peers found for %v", topic)
-		if time.Since(pubtopicLastTime) > 5*time.Second {
-			pubtopicLastTime = time.Now()
-			log.Printf("[pso] publish topic=%q, peers=%d", topic, len(bootres.PSO.ListPeers(topic)))
-		}
-	}
-	return err
-}
-var pubtopicLastTime = time.Now()
 
 type BoardResp struct {
 	PeerID    string         `json:"peer_id"`
@@ -413,40 +292,6 @@ func toPeerID(v any) (peer.ID, error) {
 	default:
 		return "", fmt.Errorf("expected peer.ID or string, got %T", v)
 	}
-}
-
-func IsPeerInTopic(pid any, topic string) bool {
-	p, err := toPeerID(pid)
-	if err != nil {
-		return false
-	}
-	if bootres == nil || bootres.PSO == nil {
-		return false
-	}
-	for _, q := range bootres.PSO.ListPeers(topic) {
-		if q == p {
-			return true
-		}
-	}
-	return false
-}
-
-func IsPeerInAnyTopic(pid any) bool {
-	p, err := toPeerID(pid)
-	if err != nil {
-		return false
-	}
-	if bootres == nil || bootres.PSO == nil {
-		return false
-	}
-	for _, topic := range bootres.PSO.GetTopics() {
-		for _, q := range bootres.PSO.ListPeers(topic) {
-			if q == p {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 func IsPeerConnected(pid any, out bool) bool {
@@ -645,22 +490,6 @@ func CollectConns() ([]ConnResp, error) {
 	return out, nil
 }
 
-func CollectDHT() (DHTResp, error) {
-	if bootres == nil || bootres.Host == nil || bootres.PSO == nil {
-		return DHTResp{}, fmt.Errorf("libp2p not ready")
-	}
-	size, strs := dhtCollectDHT()
-
-	topics := bootres.PSO.GetTopics()
-	log.Println(topics)
-
-	return DHTResp{
-		PeerCount: size,
-		Peers:     strs,
-		Topics:    topics,
-	}, nil
-}
-
 func CollectRelays() (RelayResp, error) {
 	if bootres == nil || bootres.Host == nil {
 		return RelayResp{}, fmt.Errorf("libp2p not ready")
@@ -753,43 +582,7 @@ func GetClusterPeers() []string {
 	return bootres.PeerDB.ListIDs()
 }
 
-func CollectTopics() []TopicEntry {
-	if bootres.Host == nil || bootres.PSO == nil {
-		return []TopicEntry{}
-	}
-	seen := make(map[string]*TopicEntry)
-	for _, t := range bootres.PSO.GetTopics() {
-		seen[t] = &TopicEntry{Topic: t}
-	}
-	topicSubs.Range(func(key, val any) bool {
-		t := key.(string)
-		topic := val.(*pubsub.Topic)
-		if _, ok := seen[t]; !ok {
-			seen[t] = &TopicEntry{Topic: t}
-		}
-		seen[t].Subscribed = true
-		for _, p := range topic.ListPeers() {
-			seen[t].Peers = append(seen[t].Peers, p.String())
-		}
-		return true
-	})
-	discoveryTags.Range(func(key, _ any) bool {
-		t := key.(string)
-		if _, ok := seen[t]; !ok {
-			seen[t] = &TopicEntry{Topic: t}
-		}
-		seen[t].IsTag = true
-		return true
-	})
-	out := make([]TopicEntry, 0, len(seen))
-	for _, v := range seen {
-		out = append(out, *v)
-	}
-	sort.Slice(out, func(i, j int) bool {
-		return out[i].Topic < out[j].Topic
-	})
-	return out
-}
+
 
 // OnEvent registers a callback for all raw events (libp2p system events, pubsub messages, etc).
 // The same function (by pointer identity) cannot be registered twice.

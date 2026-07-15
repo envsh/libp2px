@@ -3,9 +3,7 @@ package p2put
 import (
 	"flag"
 	"os"
-	"time"
 
-	"github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/network"
 	rcmgr "github.com/libp2p/go-libp2p/p2p/host/resource-manager"
 )
@@ -104,47 +102,4 @@ func myResourceManager() network.ResourceManager {
 	rm, _ := rcmgr.NewResourceManager(rcmgr.NewFixedLimiter(limits.Scale(0, 0)))
 
 	return rm
-}
-
-func myGossipSubParams() pubsub.GossipSubParams {
-	dft := pubsub.DefaultGossipSubParams()
-	dft0 := dft
-	which := 0 // 0 default 1 minimal 2 middle
-	if currConfig.IsMobile {
-		which = 2 // or 1
-	}
-	if which == 1 { // lower bw
-		dft.D = 3
-		dft.Dlo = 2
-		dft.Dhi = 4
-		dft.Dlazy = 2
-		dft.GossipFactor = 0.05                 // 0.02
-		dft.HeartbeatInterval = 5 * time.Second // 10
-		dft.HistoryLength = 3                   // 2
-		dft.HistoryGossip = 2                   // 1
-		dft.DirectConnectTicks = 600            // ← 必须，否则除以零
-	} else if which == 2 {
-		dft.D = 3
-		dft.Dlo = 2
-		dft.Dhi = 6
-		dft.Dlazy = 3
-		dft.GossipFactor = 0.1
-		dft.HeartbeatInterval = 2 * time.Second
-		dft.HistoryLength = 5
-		dft.HistoryGossip = 3
-		dft.DirectConnectTicks = 600 // ← 必须，否则除以零
-	} else { // default
-		dft.D = 3
-		dft.Dlo = 2
-		dft.Dhi = 6
-		dft.Dlazy = 6
-		dft.GossipFactor = 0.25
-		dft.HeartbeatInterval = 10 * time.Second
-		dft.HistoryLength = 5
-		dft.HistoryGossip = 3
-		dft.DirectConnectTicks = 600 // ← 必须，否则除以零
-
-		dft = dft0
-	}
-	return dft
 }

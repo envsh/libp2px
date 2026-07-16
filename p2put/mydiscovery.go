@@ -440,7 +440,7 @@ func reconnectFromPeerDB(ctx context.Context) {
 	log.Printf("[peerdb] peers/records %v/%v %s", len(topicPeers), len(records), currConfig.HubName)
 	for _, r := range records {
 		if _, in := topicPeers[r.PeerID]; in {
-			continue
+			// continue // for new our self pubsub, always in topicPeers
 		}
 		if bootres.Host.Network().Connectedness(r.PeerID) != network.NotConnected {
 			continue

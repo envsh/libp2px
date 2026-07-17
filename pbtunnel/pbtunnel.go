@@ -415,6 +415,22 @@ func (udp *p2pUdpConn) connectOverStream() (network.Stream, error) {
 }
 
 func (udp *p2pUdpConn) Read(buf []byte) (int, error) {
+	n, err := udp.implRead(buf)
+	if err != nil {
+		if strings.Contains(err.Error(), "stream reset") {
+			log.Println("read reset reconn...", udp.peerShort(), udp.protoWithPort)
+			udp.mu.Lock()
+			udp.closed.Store(true)
+			h := udp.holder.Swap(nil)
+			udp.mu.Unlock()
+			_ = h
+			n, err = udp.implRead(buf)
+		}
+	}
+	return n, err
+}
+
+func (udp *p2pUdpConn) implRead(buf []byte) (int, error) {
 	h := udp.holder.Load()
 	if h == nil {
 		var err error
@@ -443,7 +459,24 @@ func (udp *p2pUdpConn) Read(buf []byte) (int, error) {
 	copy(buf, buf2) // check cap(buf)>=lenght
 	return length, nil
 }
+
 func (udp *p2pUdpConn) Write(buf []byte) (int, error) {
+	n, err := udp.implWrite(buf)
+	if err != nil {
+		if strings.Contains(err.Error(), "stream reset") {
+			log.Println("write reset reconn...", udp.peerShort(), udp.protoWithPort)
+			udp.mu.Lock()
+			udp.closed.Store(true)
+			h := udp.holder.Swap(nil)
+			udp.mu.Unlock()
+			_ = h
+			n, err = udp.implWrite(buf)
+		}
+	}
+	return n, err
+}
+
+func (udp *p2pUdpConn) implWrite(buf []byte) (int, error) {
 	h := udp.holder.Load()
 	if h == nil {
 		var err error
@@ -457,9 +490,10 @@ func (udp *p2pUdpConn) Write(buf []byte) (int, error) {
 	hdr := []byte{0, 0}
 	binary.BigEndian.PutUint16(hdr, uint16(n))
 	wn, err := writen(stm, append(hdr, buf...), len(buf)+2)
-	// log.Println("udp wroted", wn)
+	// log.Println("udp wroted", wn, err)
 	if err != nil {
 		log.Println(err, udp.peerShort(), udp.protoWithPort)
+		return wn, err
 	}
 	if wn != n+2 {
 		return wn, fmt.Errorf("writen failed %v %v", wn, n+2)

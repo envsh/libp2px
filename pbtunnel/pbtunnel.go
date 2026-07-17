@@ -118,6 +118,7 @@ func handleTunnel(s network.Stream) {
 
 	var localSent, localRecv int64
 
+	// read socket and write to stream
 	go func() {
 		defer log.Println("xfer tun <- sock", seq, peerid)
 		defer wg.Done()
@@ -143,6 +144,7 @@ func handleTunnel(s network.Stream) {
 		}
 	}()
 
+	// read stream and write to socket
 	go func() {
 		defer log.Println("xfer tun -> sock", seq, peerid)
 		defer wg.Done()
@@ -207,14 +209,42 @@ func handleUDPTunnel(s network.Stream) {
 	wg.Add(2)
 	var localSent, localRecv int64
 
+	// read socket and write to stream
 	go func() {
 		defer wg.Done()
-		// defer closeStream()
+		// defer streamClose()
+		buf := make([]byte, udpBufSize)
+		for {
+			n, rerr := udpConn.Read(buf)
+			if n > 0 {
+				hdr := []byte{0, 0}
+				binary.BigEndian.PutUint16(hdr, uint16(n))
+				wn, err := writen(s, append(hdr, buf[:n]...), n+2)
+				if err != nil {
+					log.Println(err)
+					return
+				}
+				atomic.AddInt64(&Stats.BytesRecv, int64(wn))
+				localRecv += int64(wn)
+				if wn != n+2 {
+					return
+				}
+			}
+			if rerr != nil {
+				return
+			}
+		}
+	}()
+
+	// read stream and write to socket
+	go func() {
+		defer wg.Done()
+		defer connClose()
 		hdr := make([]byte, 2)
 		for {
 			_, err := io.ReadFull(s, hdr)
 			if err != nil {
-				log.Println(err)
+				log.Printf("[pbtunnel] udp read hdr err %s %s: %v", peerid, s.Protocol(), err)
 				return
 			}
 			length := int(binary.BigEndian.Uint16(hdr))
@@ -227,34 +257,10 @@ func handleUDPTunnel(s network.Stream) {
 			wn, err := udpConn.Write(buf)
 			if err != nil {
 				log.Println(err)
+				return
 			}
 			localSent += int64(wn)
 			atomic.AddInt64(&Stats.BytesSent, int64(wn))
-		}
-	}()
-
-	go func() {
-		defer wg.Done()
-		defer connClose()
-		buf := make([]byte, udpBufSize)
-		for {
-			n, rerr := udpConn.Read(buf)
-			if n > 0 {
-				hdr := []byte{0, 0}
-				binary.BigEndian.PutUint16(hdr, uint16(n))
-				wn, err := writen(s, append(hdr, buf[:n]...), n+2)
-				if err != nil {
-					log.Println(err)
-				}
-				atomic.AddInt64(&Stats.BytesRecv, int64(wn))
-				localRecv += int64(wn)
-				if wn != n+2 {
-					return
-				}
-			}
-			if rerr != nil {
-				return
-			}
 		}
 	}()
 

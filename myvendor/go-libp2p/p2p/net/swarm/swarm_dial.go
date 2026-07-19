@@ -180,6 +180,20 @@ func (db *DialBackoff) Clear(p peer.ID) {
 	delete(db.entries, p)
 }
 
+func (db *DialBackoff) BackoffRemaining(p peer.ID, addr ma.Multiaddr) time.Duration {
+	db.lock.RLock()
+	defer db.lock.RUnlock()
+	ap, found := db.entries[p][string(addr.Bytes())]
+	if !found {
+		return 0
+	}
+	rem := time.Until(ap.until)
+	if rem < 0 {
+		return 0
+	}
+	return rem
+}
+
 func (db *DialBackoff) cleanup() {
 	db.lock.Lock()
 	defer db.lock.Unlock()

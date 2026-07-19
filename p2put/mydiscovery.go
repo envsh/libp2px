@@ -394,12 +394,13 @@ func discoveryV4(ctx context.Context) {
 					if len(maddrs) == 0 {
 						continue
 					}
-					info := peer.AddrInfo{ID: pid, Addrs: maddrs}
-					if err := bootres.Host.Connect(ctx, info); err != nil {
-						log.Printf("[discovery] connect %s: %v", pid.ShortString(), err)
-					} else {
-						log.Printf("[discovery] connected %s", pid.ShortString())
-					}
+				info := peer.AddrInfo{ID: pid, Addrs: maddrs}
+				ctx2 := withBackoffBypass(ctx, bootres.Host, info.ID)
+				if err := bootres.Host.Connect(ctx2, info); err != nil {
+					log.Printf("[discovery] connect %s: %v", pid.ShortString(), err)
+				} else {
+					log.Printf("[discovery] connected %s", pid.ShortString())
+				}
 				}
 
 				jamiPeers, jErr := jamiAPI.FindProviders(ctx, cid)
@@ -456,6 +457,7 @@ func reconnectFromPeerDB(ctx context.Context) {
 
 		cctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 		ctx2 := network.WithAllowLimitedConn(cctx, "peerdb-reconnect")
+		ctx2 = withBackoffBypass(ctx2, bootres.Host, info.ID)
 		if err := bootres.Host.Connect(ctx2, info); err != nil {
 			cancel()
 			log.Printf("[peerdb] reconnect %s: %v", r.PeerID.ShortString(), err)
@@ -557,7 +559,8 @@ func DiscoveryV6(ctx context.Context) {
 				if !IsGoodPeerAddr(info) {
 					continue
 				}
-				if err := bootres.Host.Connect(ctx, info); err != nil {
+				ctx2 := withBackoffBypass(ctx, bootres.Host, info.ID)
+				if err := bootres.Host.Connect(ctx2, info); err != nil {
 					log.Printf("[discoveryV6] %v connect %s: %v", n, pid.ShortString(), err)
 				} else {
 					log.Printf("[discoveryV6] %v connected %s", n, pid.ShortString())

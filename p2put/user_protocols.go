@@ -10,6 +10,9 @@ import (
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
+	"github.com/libp2p/go-libp2p/p2p/net/swarm"
+	"log"
+	"time"
 )
 
 const baseProtocolPath = "/d2hub/"
@@ -71,6 +74,31 @@ func UnregisterProtocol(name string) {
 	}
 }
 
+func withBackoffBypass(ctx context.Context, h host.Host, p peer.ID) context.Context {
+	if h.Network().Connectedness(p) == network.Connected {
+		return ctx
+	}
+	if rem := swarmBackoffRemaining(h, p); rem > 0 {
+		log.Printf("[bypass] %s backoff remaining %v, force direct dial", p.ShortString(), rem.Round(time.Millisecond))
+		return network.WithForceDirectDial(ctx, "bypass-backoff")
+	}
+	return ctx
+}
+
+func swarmBackoffRemaining(h host.Host, p peer.ID) time.Duration {
+	s, ok := h.Network().(*swarm.Swarm)
+	if !ok {
+		return 0
+	}
+	var maxRem time.Duration
+	for _, addr := range h.Peerstore().Addrs(p) {
+		if rem := s.Backoff().BackoffRemaining(p, addr); rem > maxRem {
+			maxRem = rem
+		}
+	}
+	return maxRem
+}
+
 func OpenStream(ctx context.Context, peerIDStr string, name string) (network.Stream, error) {
 	p, err := peer.Decode(peerIDStr)
 	if err != nil {
@@ -80,6 +108,7 @@ func OpenStream(ctx context.Context, peerIDStr string, name string) (network.Str
 		return nil, fmt.Errorf("host not ready")
 	}
 	ctx = network.WithAllowLimitedConn(ctx, name+"/force-relay")
+	ctx = withBackoffBypass(ctx, bootres.Host, p)
 	return bootres.Host.NewStream(ctx, p, fullProtoID(name))
 }
 
@@ -91,6 +120,7 @@ func OpenStreamDirect(ctx context.Context, peerIDStr string, name string) (netwo
 	if bootres == nil || bootres.Host == nil {
 		return nil, fmt.Errorf("host not ready")
 	}
+	ctx = withBackoffBypass(ctx, bootres.Host, p)
 	return bootres.Host.NewStream(ctx, p, fullProtoID(name))
 }
 

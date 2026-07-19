@@ -1,5 +1,7 @@
 package p2put
 
+
+// 太容易出现dial backoff了
 var manualRelays = []string{
 	// bootstrap node
 	// "/ip4/104.131.131.82/tcp/4001/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",

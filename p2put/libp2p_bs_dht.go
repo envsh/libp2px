@@ -230,6 +230,7 @@ func findAndConnect(tag string, rd *routing.RoutingDiscovery, limit int) []peer.
 			// 每两个连接之间间隔 2s
 			time.Sleep(3 * time.Second)
 			dialCtx, dialCancel := context.WithTimeout(context.Background(), 10*time.Second)
+			dialCtx = withBackoffBypass(dialCtx, bootres.Host, p.ID)
 			t0 := time.Now()
 			if err := bootres.Host.Connect(dialCtx, p); err != nil {
 				log.Printf("[discovery] connect %s: %v", p.ID.ShortString(), err)

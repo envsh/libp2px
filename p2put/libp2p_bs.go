@@ -426,6 +426,7 @@ func tryConnect(p peer.AddrInfo) error {
 	// 每两个连接之间间隔 2s
 	time.Sleep(3 * time.Second)
 	dialCtx, dialCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	dialCtx = withBackoffBypass(dialCtx, bootres.Host, p.ID)
 	t0 := time.Now()
 	err := bootres.Host.Connect(dialCtx, p)
 	if err != nil {
@@ -827,6 +828,7 @@ func relayPoolManager(ctx context.Context, h host.Host, rp *RelayPool, k int) {
 
 func doRelayReserve(ctx context.Context, h host.Host, rp *RelayPool, ai peer.AddrInfo) {
 	log.Printf("[relaypool] connecting %s", ai.ID.ShortString())
+	ctx = withBackoffBypass(ctx, h, ai.ID)
 	if err := h.Connect(ctx, ai); err != nil {
 		log.Printf("[relaypool] connect %s: %v", ai.ID.ShortString(), err)
 		rp.RecordResult(ai.ID, err)
